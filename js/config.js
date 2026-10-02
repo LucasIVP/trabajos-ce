@@ -4,5 +4,5 @@
    NUNCA poner acá la clave service_role, la contraseña de la base ni tokens de Notion o Google. */
 window.PORTAL_CONFIG = {
   SUPABASE_URL: 'https://nryjrdzzmtifalpeugeb.supabase.co',
-  SUPABASE_KEY: 'PEGAR_ACA_LA_CLAVE_PUBLICA'
+  SUPABASE_KEY: 'sb_publishable_lCQ513LHR9FntLEKqhjSqw_txLQIyoL'
 };
