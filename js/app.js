@@ -79,11 +79,13 @@ async function run(promise, okMsg) {
 
 /* ---------- utilidades de vista ---------- */
 function evById(id) { return DB.eventos.filter(function (e) { return e.id === id; })[0]; }
-function docStat(d) { return !d.recibido ? 'falta' : (d.sintesis ? 'ok' : 'sin'); }
+/* Estado de un documento: falta (no recibido), ok (con Síntesis), na (recibido y no lleva Síntesis), sin (recibido, falta la Síntesis) */
+function docStat(d) { return !d.recibido ? 'falta' : d.sintesis ? 'ok' : d.lleva_sintesis === false ? 'na' : 'sin'; }
 function pill(p) { return '<span class="pill p-' + esc(p) + '">' + esc(p.charAt(0).toUpperCase() + p.slice(1)) + '</span>'; }
-function docPill(d) { var s = docStat(d); return s === 'ok' ? '<span class="pill p-baja">Con Síntesis</span>' : s === 'sin' ? '<span class="pill p-media">Falta Síntesis</span>' : '<span class="pill p-alta">No disponible</span>'; }
-function docCounts(list) { var ok = 0, sin = 0, no = 0; list.forEach(function (d) { var s = docStat(d); if (s === 'ok') ok++; else if (s === 'sin') sin++; else no++; }); return { ok: ok, sin: sin, no: no, t: list.length }; }
-function meter(c) { return c.t ? '<div class="meter" role="img" aria-label="Avance de documentos"><i class="m-ok" style="width:' + c.ok / c.t * 100 + '%"></i><i class="m-mid" style="width:' + c.sin / c.t * 100 + '%"></i><i class="m-no" style="width:' + c.no / c.t * 100 + '%"></i></div>' : ''; }
+function docPill(d) { var s = docStat(d); return s === 'ok' ? '<span class="pill p-baja">Con Síntesis</span>' : s === 'na' ? '<span class="pill p-neutral">No lleva Síntesis</span>' : s === 'sin' ? '<span class="pill p-media">Falta Síntesis</span>' : '<span class="pill p-alta">No disponible</span>'; }
+/* listo = con Síntesis o recibido sin necesidad de Síntesis */
+function docCounts(list) { var ok = 0, na = 0, sin = 0, no = 0; list.forEach(function (d) { var s = docStat(d); if (s === 'ok') ok++; else if (s === 'na') na++; else if (s === 'sin') sin++; else no++; }); return { ok: ok, na: na, listo: ok + na, sin: sin, no: no, t: list.length }; }
+function meter(c) { return c.t ? '<div class="meter" role="img" aria-label="Avance de documentos"><i class="m-ok" style="width:' + c.listo / c.t * 100 + '%"></i><i class="m-mid" style="width:' + c.sin / c.t * 100 + '%"></i><i class="m-no" style="width:' + c.no / c.t * 100 + '%"></i></div>' : ''; }
 function evCard(e) {
   var n = days(e.desde), cnt = days(e.hasta) < 0 ? '<span class="days" style="font-size:16px">Finalizado</span>' : '<span class="days">' + Math.max(n, 0) + '<small>' + (n > 0 ? 'días' : 'en curso') + '</small></span>';
   return '<button type="button" class="ev-card" data-ev="' + esc(e.id) + '">' + cnt + '<b>' + esc(e.n) + '</b><span class="meta">' + esc(e.lugar) + ' · ' + range(e) + '</span><span><span class="pill p-neutral">' + esc(e.st) + '</span> <span class="mono muted">#' + esc(e.ad || '') + '</span></span></button>';
@@ -118,8 +120,8 @@ function vInicio() {
     (wk.length ? wk.map(taskHTML).join('') : '<div class="empty-box">No hay tareas pendientes esta semana.</div>') + '</div></section>' +
     '<div style="display:flex;flex-direction:column;gap:20px;min-width:0">' +
     '<section class="panel"><header><h2>' + (cur ? esc(cur.n) + ': documentos' : 'Documentos') + '</h2>' + (cur ? '<button class="btn" data-ev="' + esc(cur.id) + '" data-go="docs" type="button">Abrir</button>' : '') + '</header><div class="body" style="display:grid;gap:10px">' +
-    '<div><b class="mono" style="font-size:22px">' + cn.ok + '</b> <span class="muted">de ' + cn.t + ' con Síntesis</span></div>' + meter(cn) +
-    '<div class="note">' + cn.sin + ' recibidos sin Síntesis · ' + cn.no + ' aún no disponibles</div></div></section>' +
+    '<div><b class="mono" style="font-size:22px">' + cn.listo + '</b> <span class="muted">de ' + cn.t + ' listos</span></div>' + meter(cn) +
+    '<div class="note">' + cn.ok + ' con Síntesis · ' + (cn.na ? cn.na + ' no la llevan · ' : '') + cn.sin + ' recibidos sin Síntesis · ' + cn.no + ' aún no disponibles</div></div></section>' +
     '<section class="panel"><header><h2>En espera (Qrx)</h2><span class="pill p-media">' + q.length + '</span></header><div class="body">' + (q.length ? q.map(function (n) { return '<div style="padding:6px 0;border-bottom:1px solid var(--line)"><span class="mono muted">#' + esc(n.ad) + ' · ' + fm(n.fecha) + '</span><div>' + esc(n.texto) + '</div></div>'; }).join('') : '<div class="empty-box">Nada en espera.</div>') + '</div></section>' +
     '</div></div>';
 }
@@ -206,13 +208,15 @@ function docsTable(list) {
   });
   function ch(k, label, opts) { return '<div class="chips"><span class="gl">' + label + '</span>' + opts.map(function (o) { return '<button class="chip" type="button" data-f="' + k + '" data-fv="' + o[0] + '" aria-pressed="' + (f[k] === o[0]) + '">' + o[1] + '</button>'; }).join('') + '</div>'; }
   function link(u, txt) { var s = safeUrl(u); return s ? '<a class="lnk" href="' + esc(s) + '" target="_blank" rel="noopener noreferrer">' + txt + '</a>' : null; }
-  return '<div style="display:flex;flex-wrap:wrap;gap:12px 24px">' + ch('est', 'Estado', [['todos', 'Todos'], ['ok', 'Con Síntesis'], ['sin', 'Sin Síntesis'], ['falta', 'No disponible']]) + ch('rel', 'Relevancia', [['todos', 'Todas'], ['alta', 'Alta'], ['media', 'Media'], ['baja', 'Baja']]) + ch('g', 'Grupo', [['todos', 'Todos'], ['P', 'Plenario'], ['S', 'Subcomités'], ['I', 'Informativos']]) + '</div>' +
+  return '<div style="display:flex;flex-wrap:wrap;gap:12px 24px">' + ch('est', 'Estado', [['todos', 'Todos'], ['ok', 'Con Síntesis'], ['sin', 'Sin Síntesis'], ['na', 'No lleva Síntesis'], ['falta', 'No disponible']]) + ch('rel', 'Relevancia', [['todos', 'Todas'], ['alta', 'Alta'], ['media', 'Media'], ['baja', 'Baja']]) + ch('g', 'Grupo', [['todos', 'Todos'], ['P', 'Plenario'], ['S', 'Subcomités'], ['I', 'Informativos']]) + '</div>' +
     '<div class="note" style="margin:8px 0">Mostrando ' + rows.length + ' de ' + list.length + ' documentos</div>' +
     '<div class="panel tbox"><table><thead><tr><th>Punto</th><th>Documento</th><th>Asunto</th><th>Relevancia</th><th>Idioma</th><th>Estado</th><th>Documento</th><th>Síntesis (Doc)</th></tr></thead><tbody>' +
     (rows.length ? rows.map(function (d) {
-      var act = !d.recibido ? '<button class="btn ghost" type="button" data-doc="' + esc(d.id) + '" data-do="r">Marcar recibido</button>' : !d.sintesis ? '<button class="btn ghost" type="button" data-doc="' + esc(d.id) + '" data-do="s">Marcar Síntesis lista</button>' : '';
+      var lleva = d.lleva_sintesis !== false;
+      var act = !d.recibido ? '<button class="btn ghost" type="button" data-doc="' + esc(d.id) + '" data-do="r">Marcar recibido</button>' : !d.sintesis && lleva ? '<button class="btn ghost" type="button" data-doc="' + esc(d.id) + '" data-do="s">Marcar Síntesis lista</button>' : '';
+      if (!d.sintesis) act += ' <button class="btn ghost adm" type="button" data-doc="' + esc(d.id) + '" data-do="' + (lleva ? 'n">No lleva Síntesis' : 'l">Sí lleva Síntesis') + '</button>';
       var a = d.recibido ? (link(d.url_doc, 'Abrir') || '<span class="muted">Sin link</span>') : '<span class="muted">Sin archivo</span>';
-      var b = d.sintesis ? (link(d.url_sintesis, 'Abrir Síntesis') || '<span class="muted">Sin link</span>') : (d.recibido ? '<span class="muted">Falta</span>' : '<span class="muted">—</span>');
+      var b = d.sintesis ? (link(d.url_sintesis, 'Abrir Síntesis') || '<span class="muted">Sin link</span>') : !lleva ? '<span class="muted">No lleva</span>' : (d.recibido ? '<span class="muted">Falta</span>' : '<span class="muted">—</span>');
       return '<tr><td class="mono muted">' + esc(d.punto) + '</td><td class="code">' + esc(d.codigo) + '<div style="margin-top:4px">' + delBtn('documentos', d.id, 'el documento ' + d.codigo) + '</div></td><td>' + esc(d.asunto) + '</td><td>' + pill(d.relevancia) + '</td><td class="mono">' + (d.recibido ? esc(d.idioma || '—') : '—') + '</td><td>' + docPill(d) + (act ? '<div class="edit" style="margin-top:4px">' + act + '</div>' : '') + '</td><td>' + a + '</td><td>' + b + '</td></tr>';
     }).join('') : '<tr><td colspan="8" class="empty-box">Ningún documento coincide con los filtros.</td></tr>') +
     '</tbody></table></div>';
@@ -224,8 +228,8 @@ function vEventos() {
   var tb = '<div class="tabs" role="tablist">' + tabs.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '"' + (S.tab === t[0] ? ' aria-current="true"' : '') + '>' + t[1] + '</button>'; }).join('') + '</div>';
   var body = '';
   if (S.tab === 'resumen') {
-    body = '<div class="kpis"><div class="kpi"><div class="n">' + Math.max(days(e.desde), 0) + '</div><div class="l">días para el inicio</div></div><div class="kpi"><div class="n">' + c.t + '</div><div class="l">documentos en seguimiento</div></div><div class="kpi"><div class="n">' + c.ok + '</div><div class="l">con Síntesis</div></div><div class="kpi"><div class="n">' + DB.tareas.filter(function (t) { return t.ad === e.ad && t.estado !== 'Completadas'; }).length + '</div><div class="l">tareas abiertas</div></div></div>' +
-      (c.t ? '<div>' + meter(c) + '<div class="note" style="margin-top:6px">Verde: con Síntesis · Ámbar: recibido sin Síntesis · Rojo: aún no disponible</div></div>' : '') +
+    body = '<div class="kpis"><div class="kpi"><div class="n">' + Math.max(days(e.desde), 0) + '</div><div class="l">días para el inicio</div></div><div class="kpi"><div class="n">' + c.t + '</div><div class="l">documentos en seguimiento</div></div><div class="kpi"><div class="n">' + c.listo + '</div><div class="l">listos (con Síntesis o sin necesidad)</div></div><div class="kpi"><div class="n">' + DB.tareas.filter(function (t) { return t.ad === e.ad && t.estado !== 'Completadas'; }).length + '</div><div class="l">tareas abiertas</div></div></div>' +
+      (c.t ? '<div>' + meter(c) + '<div class="note" style="margin-top:6px">Verde: con Síntesis o no la lleva · Ámbar: recibido sin Síntesis · Rojo: aún no disponible</div></div>' : '') +
       '<div class="panel"><div class="body"><h3>Datos del evento</h3><p style="margin:6px 0 0" class="muted">' + esc(e.lugar) + ' · ' + range(e) + ' · Expediente <span class="mono">#' + esc(e.ad || '—') + '</span></p></div></div>';
   } else if (S.tab === 'docs') {
     body = list.length ? docsTable(list) : empty('Todavía no hay documentos para este evento.<br>Se cargan a medida que llegan, con su link a Drive.');
@@ -318,7 +322,8 @@ document.addEventListener('click', async function (e) {
     return;
   }
   if (d.doc) {
-    var patch = d.do === 'r' ? { recibido: true } : { sintesis: true };
+    var patch = { r: { recibido: true }, s: { sintesis: true }, n: { lleva_sintesis: false }, l: { lleva_sintesis: true } }[d.do];
+    if (!patch) return;
     var y2 = window.scrollY; await run(sb.from('documentos').update(patch).eq('id', d.doc), 'Documento actualizado'); window.scrollTo(0, y2);
     return;
   }
