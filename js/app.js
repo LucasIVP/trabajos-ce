@@ -244,10 +244,10 @@ function vMiembros() {
   return '<div class="head"><div><h1>Miembros</h1><p>Solo las cuentas invitadas pueden entrar. No hay registro abierto.</p></div></div>' +
     '<div class="panel tbox"><table style="min-width:640px"><thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Iniciales</th></tr></thead><tbody>' + DB.members.map(function (m) {
       var self = m.id === S.me.id;
-      var sel = '<select data-rol="' + esc(m.id) + '" aria-label="Rol de ' + esc(m.email) + '"' + (self ? ' disabled title="No podés cambiar tu propio rol"' : '') + '>' + Object.keys(ROLES).map(function (k) { return '<option value="' + k + '"' + (m.rol === k ? ' selected' : '') + '>' + ROLES[k] + '</option>'; }).join('') + '</select>';
+      var sel = '<select data-rol="' + esc(m.id) + '" aria-label="Rol de ' + esc(m.email) + '"' + (self ? ' disabled title="No podés cambiar tu propio rol"' : '') + '>' + (m.rol ? '' : '<option value="" selected disabled>Sin rol</option>') + Object.keys(ROLES).map(function (k) { return '<option value="' + k + '"' + (m.rol === k ? ' selected' : '') + '>' + ROLES[k] + '</option>'; }).join('') + '</select>';
       return '<tr><td>' + esc(m.nombre || '—') + '</td><td class="mono">' + esc(m.email) + '</td><td>' + sel + '</td><td class="mono">' + esc(m.iniciales || '—') + '</td></tr>';
     }).join('') + '</tbody></table></div>' +
-    '<section class="panel"><header><h2>Invitar a una persona</h2></header><div class="body"><p style="margin:0 0 6px">Las invitaciones se hacen desde el panel de Supabase: Authentication, Users, Invite user. La persona recibe un correo para crear su clave y entra con rol Lectura; después le asignás el rol acá.</p><p class="note" style="margin:0">Para dar de baja a alguien, borrarlo desde el mismo panel.</p></div></section>';
+    '<section class="panel"><header><h2>Invitar a una persona</h2></header><div class="body"><p style="margin:0 0 6px">Las invitaciones se hacen desde el panel de Supabase: Authentication, Users, Invite user. La persona recibe un correo para crear su clave y entra sin rol (no ve nada); después le asignás el rol acá.</p><p class="note" style="margin:0">Para dar de baja a alguien, borrarlo desde el mismo panel.</p></div></section>';
 }
 var V = { inicio: vInicio, semana: vSemana, novedades: vNov, eventos: vEventos, miembros: vMiembros };
 
