@@ -88,14 +88,17 @@ function evCard(e) {
   var n = days(e.desde), cnt = days(e.hasta) < 0 ? '<span class="days" style="font-size:16px">Finalizado</span>' : '<span class="days">' + Math.max(n, 0) + '<small>' + (n > 0 ? 'días' : 'en curso') + '</small></span>';
   return '<button type="button" class="ev-card" data-ev="' + esc(e.id) + '">' + cnt + '<b>' + esc(e.n) + '</b><span class="meta">' + esc(e.lugar) + ' · ' + range(e) + '</span><span><span class="pill p-neutral">' + esc(e.st) + '</span> <span class="mono muted">#' + esc(e.ad || '') + '</span></span></button>';
 }
+/* Borrar: tareas y novedades, edición y admin; el resto, solo admin (lo mismo que exigen las reglas de la base). */
+var DEL_CLS = { tareas: 'edit', novedades: 'edit', documentos: 'adm', recursos: 'adm', eventos: 'adm' };
+function delBtn(tabla, id, que) { return '<button type="button" class="btn ghost del ' + DEL_CLS[tabla] + '" data-del="' + tabla + '" data-id="' + esc(id) + '" data-que="' + esc(que) + '">Borrar</button>'; }
 var NEXT = { 'Pendiente': ['Empezar', 'En Proceso'], 'En Proceso': ['Completar', 'Completadas'], 'Completadas': ['Reabrir', 'Pendiente'] };
 function taskHTML(t) {
   var p = ['alta', 'media', 'baja'].indexOf(t.prioridad) > -1 ? t.prioridad : 'media';
-  return '<div class="tk ' + p + (t.estado === 'Completadas' ? ' done' : '') + '"><div class="t">' + esc(t.titulo) + '</div><div class="m"><span class="mono">#' + esc(t.ad || '—') + '</span>' + (t.estado === 'En Proceso' ? '<span class="pill p-neutral">En proceso</span>' : '') + (t.estado === 'Completadas' ? '<span class="pill p-baja">Hecha</span>' : '') + '<button type="button" class="btn ghost edit" data-tk="' + esc(t.id) + '">' + NEXT[t.estado][0] + '</button></div></div>';
+  return '<div class="tk ' + p + (t.estado === 'Completadas' ? ' done' : '') + '"><div class="t">' + esc(t.titulo) + '</div><div class="m"><span class="mono">#' + esc(t.ad || '—') + '</span>' + (t.estado === 'En Proceso' ? '<span class="pill p-neutral">En proceso</span>' : '') + (t.estado === 'Completadas' ? '<span class="pill p-baja">Hecha</span>' : '') + '<button type="button" class="btn ghost edit" data-tk="' + esc(t.id) + '">' + NEXT[t.estado][0] + '</button>' + delBtn('tareas', t.id, 'la tarea "' + t.titulo + '"') + '</div></div>';
 }
 function novHTML(n) {
   var d = pd(n.fecha), i = DB.novs.indexOf(n);
-  return '<div class="nv"><div class="dt"><b>' + d.getDate() + '</b><span>' + MON[d.getMonth()] + '</span></div><div><p>' + esc(n.texto) + '</p><span class="muted">' + esc(n.autor) + '</span> ' + (n.qrx ? '<span class="pill p-media">En espera (Qrx)</span>' : '') + (n.cal ? ' <button class="btn ghost edit" type="button" data-cal="from" data-nv="' + i + '">Preparar evento de Calendar</button>' : '') + '</div></div>';
+  return '<div class="nv"><div class="dt"><b>' + d.getDate() + '</b><span>' + MON[d.getMonth()] + '</span></div><div><p>' + esc(n.texto) + '</p><span class="muted">' + esc(n.autor) + '</span> ' + (n.qrx ? '<span class="pill p-media">En espera (Qrx)</span>' : '') + (n.cal ? ' <button class="btn ghost edit" type="button" data-cal="from" data-nv="' + i + '">Preparar evento de Calendar</button>' : '') + ' ' + delBtn('novedades', n.id, 'la novedad del ' + fm(n.fecha) + ' (#' + n.ad + ')') + '</div></div>';
 }
 function expOptions() { return DB.expList.map(function (x) { return '<option value="' + esc(x.ad) + '">#' + esc(x.ad) + ' ' + esc(x.nombre) + '</option>'; }).join(''); }
 function empty(msg) { return '<div class="panel empty-box">' + msg + '</div>'; }
@@ -210,7 +213,7 @@ function docsTable(list) {
       var act = !d.recibido ? '<button class="btn ghost" type="button" data-doc="' + esc(d.id) + '" data-do="r">Marcar recibido</button>' : !d.sintesis ? '<button class="btn ghost" type="button" data-doc="' + esc(d.id) + '" data-do="s">Marcar Síntesis lista</button>' : '';
       var a = d.recibido ? (link(d.url_doc, 'Abrir') || '<span class="muted">Sin link</span>') : '<span class="muted">Sin archivo</span>';
       var b = d.sintesis ? (link(d.url_sintesis, 'Abrir Síntesis') || '<span class="muted">Sin link</span>') : (d.recibido ? '<span class="muted">Falta</span>' : '<span class="muted">—</span>');
-      return '<tr><td class="mono muted">' + esc(d.punto) + '</td><td class="code">' + esc(d.codigo) + '</td><td>' + esc(d.asunto) + '</td><td>' + pill(d.relevancia) + '</td><td class="mono">' + (d.recibido ? esc(d.idioma || '—') : '—') + '</td><td>' + docPill(d) + (act ? '<div class="edit" style="margin-top:4px">' + act + '</div>' : '') + '</td><td>' + a + '</td><td>' + b + '</td></tr>';
+      return '<tr><td class="mono muted">' + esc(d.punto) + '</td><td class="code">' + esc(d.codigo) + '<div style="margin-top:4px">' + delBtn('documentos', d.id, 'el documento ' + d.codigo) + '</div></td><td>' + esc(d.asunto) + '</td><td>' + pill(d.relevancia) + '</td><td class="mono">' + (d.recibido ? esc(d.idioma || '—') : '—') + '</td><td>' + docPill(d) + (act ? '<div class="edit" style="margin-top:4px">' + act + '</div>' : '') + '</td><td>' + a + '</td><td>' + b + '</td></tr>';
     }).join('') : '<tr><td colspan="8" class="empty-box">Ningún documento coincide con los filtros.</td></tr>') +
     '</tbody></table></div>';
 }
@@ -234,11 +237,11 @@ function vEventos() {
     body = ns.length ? '<div class="panel"><div class="body">' + ns.map(novHTML).join('') + '</div></div>' : empty('Todavía no hay novedades de este evento.');
   } else {
     var rs = DB.recursos.filter(function (r) { return r.evento_id === e.id; });
-    body = rs.length ? '<div class="grid3">' + rs.map(function (r) { var u = safeUrl(r.url); return '<div class="panel"><div class="body"><h3>' + esc(r.titulo) + '</h3><p class="note" style="margin:6px 0 10px">Link a Drive. Quien no tiene permiso en Drive no puede abrirlo.</p>' + (u ? '<a class="lnk" href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">Abrir en Drive</a>' : '<span class="muted">Sin link</span>') + '</div></div>'; }).join('') + '</div>' : empty('Todavía no hay recursos cargados para este evento.');
+    body = rs.length ? '<div class="grid3">' + rs.map(function (r) { var u = safeUrl(r.url); return '<div class="panel"><div class="body"><h3>' + esc(r.titulo) + '</h3><p class="note" style="margin:6px 0 10px">Link a Drive. Quien no tiene permiso en Drive no puede abrirlo.</p>' + (u ? '<a class="lnk" href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">Abrir en Drive</a>' : '<span class="muted">Sin link</span>') + ' ' + delBtn('recursos', r.id, 'el recurso "' + r.titulo + '"') + '</div></div>'; }).join('') + '</div>' : empty('Todavía no hay recursos cargados para este evento.');
   }
   return '<div class="head"><div><h1>Eventos</h1><p>Cada evento reúne sus documentos, tareas, novedades y recursos.</p></div></div>' +
     '<div class="ev-layout"><div class="ev-list">' + DB.eventos.map(function (x) { return '<button type="button" data-ev="' + esc(x.id) + '"' + (x.id === S.ev ? ' aria-current="true"' : '') + '><b>' + esc(x.n) + '</b><span>' + range(x) + ' · ' + esc(x.lugar) + '</span></button>'; }).join('') + '</div>' +
-    '<div style="display:flex;flex-direction:column;gap:16px;min-width:0"><div><h2 style="font-size:20px">' + esc(e.n) + '</h2><div class="muted" style="margin-top:2px">' + esc(e.lugar) + ' · ' + range(e) + ' · <span class="pill p-neutral">' + esc(e.st) + '</span></div></div>' + tb + body + '</div></div>';
+    '<div style="display:flex;flex-direction:column;gap:16px;min-width:0"><div><h2 style="font-size:20px">' + esc(e.n) + '</h2><div class="muted" style="margin-top:2px">' + esc(e.lugar) + ' · ' + range(e) + ' · <span class="pill p-neutral">' + esc(e.st) + '</span> ' + delBtn('eventos', e.id, 'el evento "' + e.n + '" junto con sus ' + list.length + ' documentos y sus recursos') + '</div></div>' + tb + body + '</div></div>';
 }
 function vMiembros() {
   return '<div class="head"><div><h1>Miembros</h1><p>Solo las cuentas invitadas pueden entrar. No hay registro abierto.</p></div></div>' +
@@ -247,7 +250,13 @@ function vMiembros() {
       var sel = '<select data-rol="' + esc(m.id) + '" aria-label="Rol de ' + esc(m.email) + '"' + (self ? ' disabled title="No podés cambiar tu propio rol"' : '') + '>' + (m.rol ? '' : '<option value="" selected disabled>Sin rol</option>') + Object.keys(ROLES).map(function (k) { return '<option value="' + k + '"' + (m.rol === k ? ' selected' : '') + '>' + ROLES[k] + '</option>'; }).join('') + '</select>';
       return '<tr><td>' + esc(m.nombre || '—') + '</td><td class="mono">' + esc(m.email) + '</td><td>' + sel + '</td><td class="mono">' + esc(m.iniciales || '—') + '</td></tr>';
     }).join('') + '</tbody></table></div>' +
-    '<section class="panel"><header><h2>Invitar a una persona</h2></header><div class="body"><p style="margin:0 0 6px">Las invitaciones se hacen desde el panel de Supabase: Authentication, Users, Invite user. La persona recibe un correo para crear su clave y entra sin rol (no ve nada); después le asignás el rol acá.</p><p class="note" style="margin:0">Para dar de baja a alguien, borrarlo desde el mismo panel.</p></div></section>';
+    '<section class="panel"><header><h2>Invitar a una persona</h2></header><div class="body"><form class="form" id="invf">' +
+    '<div class="row"><label for="ie">Correo<input id="ie" type="email" placeholder="nombre@ejemplo.com" maxlength="254" required></label>' +
+    '<label for="in">Nombre<input id="in" type="text" maxlength="120"></label>' +
+    '<label for="ii">Iniciales<input id="ii" type="text" maxlength="8"></label>' +
+    '<label for="ir">Rol<select id="ir"><option value="">Sin rol (lo asignás después)</option>' + Object.keys(ROLES).map(function (k) { return '<option value="' + k + '">' + ROLES[k] + '</option>'; }).join('') + '</select></label></div>' +
+    '<div><button class="btn primary" type="submit">Enviar invitación</button></div></form>' +
+    '<p class="note" style="margin:8px 0 0">La persona recibe un correo para crear su clave (mínimo 12 caracteres). Para dar de baja a alguien, borrarlo desde el panel de Supabase: Authentication, Users.</p></div></section>';
 }
 var V = { inicio: vInicio, semana: vSemana, novedades: vNov, eventos: vEventos, miembros: vMiembros };
 
@@ -313,6 +322,17 @@ document.addEventListener('click', async function (e) {
     var y2 = window.scrollY; await run(sb.from('documentos').update(patch).eq('id', d.doc), 'Documento actualizado'); window.scrollTo(0, y2);
     return;
   }
+  if (d.del) {
+    if (!DEL_CLS[d.del] || !confirm('¿Borrar ' + d.que + '?\n\nNo se puede deshacer.')) return;
+    // Con .select() se sabe si la base borró algo: si las reglas no lo permiten, no da error, borra cero filas.
+    var r = await sb.from(d.del).delete().eq('id', d.id).select('id');
+    if (r.error) { toast('No se pudo borrar: ' + r.error.message); return; }
+    if (!r.data.length) { toast('No se borró: tu rol no lo permite o ya no existe.'); return; }
+    if (d.del === 'eventos') S.ev = null;
+    toast('Borrado');
+    var y4 = window.scrollY; await reload(); window.scrollTo(0, y4);
+    return;
+  }
   if (d.act) { await act(d.act); return; }
   if (d.cal) { calAct(b); }
 });
@@ -364,6 +384,21 @@ document.addEventListener('submit', async function (e) {
     S.setpw = false; S.err = ''; history.replaceState(null, '', location.pathname);
     toast('Clave guardada');
     boot(S.session);
+  }
+  if (e.target.id === 'invf') {
+    e.preventDefault();
+    var btn = e.target.querySelector('button[type=submit]');
+    if (btn.disabled || !S.me || S.me.rol !== 'admin') return;
+    var body = { email: $('#ie').value.trim(), nombre: $('#in').value.trim(), iniciales: $('#ii').value.trim(), rol: $('#ir').value, redirectTo: location.origin + location.pathname };
+    btn.disabled = true; btn.textContent = 'Enviando…';
+    var res = await sb.functions.invoke('invitar', { body: body });
+    if (res.error) {
+      var msg = 'No se pudo invitar: ' + res.error.message;
+      try { msg = (await res.error.context.json()).error || msg; } catch (x) { }
+      btn.disabled = false; btn.textContent = 'Enviar invitación'; toast(msg); return;
+    }
+    toast('Invitación enviada a ' + body.email);
+    var y3 = window.scrollY; await reload(); window.scrollTo(0, y3);
   }
 });
 document.addEventListener('input', function (e) {

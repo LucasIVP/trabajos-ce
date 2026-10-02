@@ -45,6 +45,7 @@ a{color:var(--primary)}
 .btn:hover{border-color:var(--primary)}
 .btn.primary{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
 .btn.ghost{padding:3px 9px;font-size:12.5px;color:var(--primary)}
+.btn.ghost.del{color:var(--alta)}
 .chip{border:1px solid var(--line);background:var(--surface);border-radius:14px;padding:4px 11px;cursor:pointer;font-size:12.5px}
 .chip[aria-pressed="true"]{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
 .chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
