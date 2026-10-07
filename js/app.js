@@ -99,10 +99,6 @@ async function loadAll() {
     sb.from('recursos').select('*'),
     sb.from('members').select('*').order('created_at')
   ];
-  if (isAdmin()) {
-    qs.push(sb.from('auditoria').select('*').order('momento', { ascending: false }).limit(50));
-    qs.push(sb.from('errores').select('*').order('momento', { ascending: false }).limit(30));
-  }
   var q = await Promise.all(qs);
   for (var i = 0; i < q.length; i++) { if (q[i].error) throw q[i].error; }
   DB.eventos = q[0].data.map(function (e) { return { id: e.id, n: e.nombre, lugar: e.lugar, desde: e.desde, hasta: e.hasta, ad: e.ad, st: e.estado }; });
@@ -114,8 +110,16 @@ async function loadAll() {
   DB.novs = q[4].data;
   DB.recursos = q[5].data;
   DB.members = q[6].data;
-  DB.audit = q[7] ? q[7].data : [];
-  DB.errs = q[8] ? q[8].data : [];
+  /* Registros de admin: si fallan (por ejemplo, la tabla todavía no existe), no frenan el resto. null = no disponible. */
+  DB.audit = []; DB.errs = [];
+  if (isAdmin()) {
+    var ad = await Promise.all([
+      sb.from('auditoria').select('*').order('momento', { ascending: false }).limit(50),
+      sb.from('errores').select('*').order('momento', { ascending: false }).limit(30)
+    ]);
+    DB.audit = ad[0].error ? null : ad[0].data;
+    DB.errs = ad[1].error ? null : ad[1].data;
+  }
   if (!S.ev || !evById(S.ev)) S.ev = DB.eventos.length ? DB.eventos[0].id : null;
 }
 async function loadFactors() {
@@ -364,9 +368,9 @@ function vMiembros() {
     '<div><button class="btn primary" type="submit">Enviar invitación</button></div></form>' +
     '<p class="note" style="margin:8px 0 0">La persona recibe un correo para crear su clave (mínimo 12 caracteres). Para dar de baja a alguien, borrarlo desde el panel de Supabase: Authentication, Users.</p></div></section>' +
     '<section class="panel"><header><h2>Registro de cambios</h2><span class="note">Últimos 50 · altas, cambios y borrados de todo el portal</span></header>' +
-    (DB.audit.length ? '<div class="tbox"><table style="min-width:720px"><thead><tr><th>Cuándo</th><th>Quién</th><th>Qué</th><th>Tabla</th><th>Detalle</th></tr></thead><tbody>' + DB.audit.map(auditRow).join('') + '</tbody></table></div>' : '<div class="empty-box">Todavía no hay cambios registrados.</div>') + '</section>' +
+    (DB.audit === null ? '<div class="empty-box">El registro de cambios no está disponible en la base.</div>' : DB.audit.length ? '<div class="tbox"><table style="min-width:720px"><thead><tr><th>Cuándo</th><th>Quién</th><th>Qué</th><th>Tabla</th><th>Detalle</th></tr></thead><tbody>' + DB.audit.map(auditRow).join('') + '</tbody></table></div>' : '<div class="empty-box">Todavía no hay cambios registrados.</div>') + '</section>' +
     '<section class="panel"><header><h2>Errores de la página</h2><span class="note">Últimos 30 · sin datos de expedientes</span></header>' +
-    (DB.errs.length ? '<div class="tbox"><table style="min-width:720px"><thead><tr><th>Cuándo</th><th>Quién</th><th>Vista</th><th>Mensaje</th></tr></thead><tbody>' + DB.errs.map(function (x) { return '<tr><td class="mono">' + esc(fdt(x.momento)) + '</td><td>' + esc(memberName(x.usuario)) + '</td><td class="mono">' + esc(x.vista) + '</td><td class="wrapw">' + esc(x.mensaje) + '<div class="note">' + esc(x.navegador) + '</div></td></tr>'; }).join('') + '</tbody></table></div>' : '<div class="empty-box">Sin errores registrados.</div>') + '</section>';
+    (DB.errs === null ? '<div class="empty-box">El registro de errores no está disponible en la base.</div>' : DB.errs.length ? '<div class="tbox"><table style="min-width:720px"><thead><tr><th>Cuándo</th><th>Quién</th><th>Vista</th><th>Mensaje</th></tr></thead><tbody>' + DB.errs.map(function (x) { return '<tr><td class="mono">' + esc(fdt(x.momento)) + '</td><td>' + esc(memberName(x.usuario)) + '</td><td class="mono">' + esc(x.vista) + '</td><td class="wrapw">' + esc(x.mensaje) + '<div class="note">' + esc(x.navegador) + '</div></td></tr>'; }).join('') + '</tbody></table></div>' : '<div class="empty-box">Sin errores registrados.</div>') + '</section>';
 }
 function enrollHTML() {
   if (!S.enroll) return '<button class="btn primary" type="button" data-act="mfa-on">Empezar</button>';
