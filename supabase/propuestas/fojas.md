@@ -24,7 +24,19 @@
 ## Cómo encaja con la página
 La página (rama `diseno-ui`) ya llama a `reservar_foja`, `confirmar_foja`, `cancelar_reserva_foja` y `anular_foja` con estos mismos nombres y parámetros. Mientras la tabla no exista, muestra el aviso y deshabilita "Reservar número de foja". Al aplicar la propuesta, se habilita sola.
 
-## Contador inicial
+## Contador inicial (obligatorio antes de cargar la primera foja de un expediente)
+Desde la migración `20261007030000_fojas_contador_inicializado.sql`, **el servidor no deja reservar** en un expediente cuya numeración no fue inicializada. Muestra: "La numeración de fojas de este expediente todavía no está inicializada…". Así ningún expediente que ya tiene fojas en Drive arranca en F001.
+
+**Plantilla** (SQL Editor; una línea por expediente; el número es el de la última foja que hay en Drive; si el expediente todavía no tiene fojas, va 0):
+
+```sql
+insert into private.foja_contador (expediente, ultimo) values ('NNN/AA', 55)
+on conflict (expediente) do update set ultimo = greatest(private.foja_contador.ultimo, excluded.ultimo);
+```
+
+`greatest()` evita bajar un contador que ya avanzó. Si en cambio se importan las fojas viejas a `public.fojas`, la primera reserva toma sola el máximo importado y no hace falta esta línea.
+
+### Detalle anterior
 Para que un expediente que ya tiene fojas en Drive no arranque en F001, hay dos caminos (ver la sección 4 del SQL):
 - **Sembrar** el contador con la foja más alta encontrada en Drive (una línea por expediente).
 - **Importar** las fojas viejas a `public.fojas` (Etapa A del documento de referencia). La primera reserva toma sola el máximo importado.
