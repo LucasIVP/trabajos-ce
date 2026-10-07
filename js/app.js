@@ -811,11 +811,21 @@ async function act(a) {
     return;
   }
 }
+var calOpener = null;
 function calAct(b) {
   var a = b.dataset.cal;
-  if (a === 'new') { S.cal = newCal({}); render(); window.scrollTo(0, 0); }
-  else if (a === 'from') { var n = DB.novs[+b.dataset.nv]; S.cal = newCal(n && n.cal); render(); window.scrollTo(0, 0); }
-  else if (a === 'close') { S.cal = null; render(); }
+  /* Al abrir el panel, el foco va a su primer campo; al cerrarlo, vuelve al botón que lo abrió. */
+  if (a === 'new' || a === 'from') {
+    var n = a === 'from' ? DB.novs[+b.dataset.nv] : null;
+    calOpener = focusSel(b);
+    S.cal = newCal(n && n.cal); render(); window.scrollTo(0, 0);
+    var f = $('#cf-titulo'); if (f) f.focus({ preventScroll: true });
+  }
+  else if (a === 'close') {
+    S.cal = null; render();
+    var o = calOpener && $(calOpener); calOpener = null;
+    if (o) { o.focus(); o.scrollIntoView({ block: 'center' }); }
+  }
   else if (a === 'tipo') { var k = b.dataset.k, c = S.cal; c.tipo = k; c.rem = TIPOS[k].rem.slice(); c.dur = TIPOS[k].dur || 60; render(); }
   else if (a === 'rem') { var m = +b.dataset.m, i = S.cal.rem.indexOf(m); if (i > -1) S.cal.rem.splice(i, 1); else S.cal.rem.push(m); render(); }
 }
