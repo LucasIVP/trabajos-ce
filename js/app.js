@@ -3,6 +3,13 @@
 (function () {
 'use strict';
 
+/* La página no se deja abrir dentro de un marco de otro sitio (clickjacking).
+   GitHub Pages no permite la cabecera frame-ancestors, así que se controla acá. */
+if (window.top !== window.self) {
+  document.body.textContent = 'El Portal CE no se puede abrir dentro de otra página. Entrá desde su dirección.';
+  return;
+}
+
 var $ = function (s) { return document.querySelector(s); };
 var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
 var MON = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
@@ -16,7 +23,8 @@ function days(s) { return Math.round((pd(s) - T0) / 864e5); }
 function range(e) { return e.desde === e.hasta ? fm(e.desde) : fm(e.desde) + ' al ' + fm(e.hasta); }
 function monday(off) { return addD(T0, -((T0.getDay() + 6) % 7) + 7 * off); }
 function safeUrl(u) { return /^https:\/\//i.test(u || '') ? u : null; }
-function toast(m) { var t = $('#toast'); t.textContent = m; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(function () { t.hidden = true; }, 2600); }
+function toast(m) { var t = $('#toast'); t.textContent = m; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(function () { t.hidden = true; }, 3200); }
+function fdt(s) { var d = new Date(s); return d.getDate() + ' ' + MON[d.getMonth()] + ' ' + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
 
 var cfg = window.PORTAL_CONFIG || {};
 var configured = cfg.SUPABASE_URL && cfg.SUPABASE_KEY && cfg.SUPABASE_KEY.indexOf('PEGAR_') !== 0;
@@ -26,18 +34,63 @@ if (configured) {
 }
 
 /* Datos cargados desde la base */
-var DB = { eventos: [], exp: {}, expList: [], docs: {}, tareas: [], novs: [], recursos: [], members: [] };
-var S = { me: null, session: null, noRole: false, setpw: false, loading: true, err: '', view: 'inicio', ev: null, tab: 'resumen', f: { est: 'todos', rel: 'todos', g: 'todos' }, tf: 'todas', wk: 0, cal: null };
+function emptyDB() { return { eventos: [], exp: {}, expList: [], docs: {}, tareas: [], novs: [], recursos: [], members: [], audit: [], errs: [] }; }
+var DB = emptyDB();
+var S = { me: null, session: null, noRole: false, setpw: false, loading: true, err: '', dataErr: '', connErr: false, aal: 'aal1', needCode: false, needEnroll: false, factors: [], enroll: null, fresh: false, view: 'inicio', ev: null, tab: 'resumen', f: { est: 'todos', rel: 'todos', g: 'todos' }, tf: 'todas', wk: 0, cal: null };
 
 /* Un enlace de invitación o de recuperación trae su tipo en la dirección */
 if (/type=(invite|recovery)/.test(location.hash)) S.setpw = true;
+if (/access_token=/.test(location.hash)) S.fresh = true;
 
-var NAV = [['inicio', 'Inicio'], ['semana', 'Semana'], ['novedades', 'Novedades'], ['eventos', 'Eventos'], ['miembros', 'Miembros', 'adm']];
+var NAV = [['inicio', 'Inicio'], ['semana', 'Semana'], ['novedades', 'Novedades'], ['eventos', 'Eventos'], ['miembros', 'Miembros', 'adm'], ['cuenta', 'Mi cuenta']];
 var ROLES = { lectura: 'Lectura', edicion: 'Edición', admin: 'Administración' };
+
+/* El segundo factor es obligatorio para todos: la base no entrega nada a una sesión sin código (aal2).
+   Admin con segundo factor: es lo mismo que exige la base (private.es_admin). */
+function isAdmin() { return !!(S.me && S.me.rol === 'admin' && S.aal === 'aal2'); }
+function uiRole() { return isAdmin() ? 'admin' : S.me.rol === 'admin' ? 'edicion' : S.me.rol; }
+
+/* ---------- cierre por inactividad ---------- */
+/* 30 minutos sin tocar la página en ningún dispositivo de este navegador: se cierra la sesión.
+   El corte del lado servidor es solo del plan Pro; esto protege el celular o la PC que quedó abierta. */
+var IDLE = 30 * 60 * 1000, IDLE_KEY = 'portalce.ultimaActividad';
+function lastAct() { try { return +localStorage.getItem(IDLE_KEY) || 0; } catch (e) { return 0; } }
+function touch() { try { localStorage.setItem(IDLE_KEY, String(Date.now())); } catch (e) { } }
+function clearAct() { try { localStorage.removeItem(IDLE_KEY); } catch (e) { } }
+function stale() { var l = lastAct(); return l > 0 && Date.now() - l > IDLE; }
+var touchedAt = 0;
+['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(function (ev) {
+  document.addEventListener(ev, function () { if (!S.session) return; var n = Date.now(); if (n - touchedAt > 15000) { touchedAt = n; touch(); } }, { passive: true });
+});
+async function idleLogout() {
+  clearAct();
+  S.err = 'Se cerró la sesión después de 30 minutos sin uso. Volvé a ingresar.';
+  await sb.auth.signOut({ scope: 'local' });
+}
+function checkIdle() { if (S.session && stale()) idleLogout(); }
+if (configured) {
+  setInterval(checkIdle, 30000);
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') checkIdle(); });
+}
+
+/* ---------- registro de errores ---------- */
+/* Se guarda solo la vista, un mensaje técnico corto y el navegador; nunca textos de novedades ni documentos.
+   Lo ve únicamente admin, en Miembros. Máximo 5 por carga de página. */
+var reported = 0;
+function report(msg, silent) {
+  if (!silent) toast('Algo falló en la página. Si se repite, avisale a quien administra.');
+  if (!sb || !S.session || !S.me || reported >= 5) return;
+  reported++;
+  try {
+    sb.from('errores').insert({ vista: String(S.view).slice(0, 40), mensaje: String(msg || 'sin mensaje').slice(0, 300), navegador: String(navigator.userAgent || '').slice(0, 200) }).then(function () { }, function () { });
+  } catch (e) { }
+}
+window.addEventListener('error', function (e) { report('error: ' + (e.message || '') + ' @' + String(e.filename || '').split('/').pop() + ':' + (e.lineno || 0)); });
+window.addEventListener('unhandledrejection', function (e) { var r = e.reason || {}; report('promesa: ' + (r.message || String(r))); });
 
 /* ---------- carga de datos ---------- */
 async function loadAll() {
-  var q = await Promise.all([
+  var qs = [
     sb.from('eventos').select('*').order('desde'),
     sb.from('expedientes').select('*').order('ad'),
     sb.from('documentos').select('*').order('codigo'),
@@ -45,7 +98,12 @@ async function loadAll() {
     sb.from('novedades').select('*').order('fecha', { ascending: false }),
     sb.from('recursos').select('*'),
     sb.from('members').select('*').order('created_at')
-  ]);
+  ];
+  if (isAdmin()) {
+    qs.push(sb.from('auditoria').select('*').order('momento', { ascending: false }).limit(50));
+    qs.push(sb.from('errores').select('*').order('momento', { ascending: false }).limit(30));
+  }
+  var q = await Promise.all(qs);
   for (var i = 0; i < q.length; i++) { if (q[i].error) throw q[i].error; }
   DB.eventos = q[0].data.map(function (e) { return { id: e.id, n: e.nombre, lugar: e.lugar, desde: e.desde, hasta: e.hasta, ad: e.ad, st: e.estado }; });
   DB.expList = q[1].data;
@@ -56,25 +114,55 @@ async function loadAll() {
   DB.novs = q[4].data;
   DB.recursos = q[5].data;
   DB.members = q[6].data;
+  DB.audit = q[7] ? q[7].data : [];
+  DB.errs = q[8] ? q[8].data : [];
   if (!S.ev || !evById(S.ev)) S.ev = DB.eventos.length ? DB.eventos[0].id : null;
 }
+async function loadFactors() {
+  try { var f = await sb.auth.mfa.listFactors(); S.factors = (f.data && f.data.totp) || []; } catch (e) { S.factors = []; }
+}
 async function boot(session) {
-  S.session = session; S.me = null; S.noRole = false; S.err = '';
+  S.session = session; S.me = null; S.noRole = false; S.dataErr = ''; S.connErr = false; S.needCode = false; S.needEnroll = false;
   if (!session) { S.loading = false; render(); return; }
   S.loading = true; render();
+  /* Segundo factor obligatorio: si la sesión no pasó el código, se pide; si la cuenta no lo tiene, se configura. */
+  var a;
+  try {
+    a = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (a.error) throw a.error;
+    S.aal = a.data.currentLevel || 'aal1';
+  } catch (e) { S.connErr = true; S.loading = false; render(); return; }
+  if (S.aal !== 'aal2') {
+    if (a.data.nextLevel === 'aal2') S.needCode = true; else S.needEnroll = true;
+    S.loading = false; render(); return;
+  }
   var r = await sb.from('members').select('*').eq('id', session.user.id).maybeSingle();
-  if (r.error || !r.data) { S.noRole = true; S.loading = false; render(); return; }
+  if (r.error) { S.connErr = true; S.loading = false; render(); report('members: ' + (r.error.code || '') + ' ' + r.error.message, true); return; }
+  if (!r.data || !r.data.rol) { S.noRole = true; S.loading = false; render(); return; }
   S.me = r.data;
-  try { await loadAll(); } catch (e) { S.err = 'No se pudieron cargar los datos. Probá de nuevo en un momento.'; }
+  await loadFactors();
+  try { await loadAll(); } catch (e) { S.dataErr = 'No se pudieron cargar los datos.'; report('carga: ' + (e.code || '') + ' ' + (e.message || ''), true); }
   S.loading = false; render();
 }
+async function rebootNow() { var s = await sb.auth.getSession(); await boot(s.data.session); }
 async function reload() { try { await loadAll(); } catch (e) { toast('No se pudo actualizar la lista.'); } render(); }
+function saveFail(r, que) {
+  toast('No se pudo ' + (que || 'guardar') + ': ' + r.error.message);
+  report((que || 'guardar') + ': ' + (r.error.code || '') + ' ' + r.error.message, true);
+}
 async function run(promise, okMsg) {
   var r = await promise;
-  if (r.error) { toast('No se pudo guardar: ' + r.error.message); return false; }
+  if (r.error) { saveFail(r); return false; }
   if (okMsg) toast(okMsg);
   await reload();
   return true;
+}
+/* Evita el doble envío: el botón queda desactivado hasta que termina la operación. */
+async function lock(b, fn, label) {
+  if (!b || b.disabled) return;
+  var txt = b.textContent;
+  b.disabled = true; b.setAttribute('aria-busy', 'true'); if (label) b.textContent = label;
+  try { await fn(); } finally { if (b.isConnected) { b.disabled = false; b.removeAttribute('aria-busy'); if (label) b.textContent = txt; } }
 }
 
 /* ---------- utilidades de vista ---------- */
@@ -85,7 +173,7 @@ function pill(p) { return '<span class="pill p-' + esc(p) + '">' + esc(p.charAt(
 function docPill(d) { var s = docStat(d); return s === 'ok' ? '<span class="pill p-baja">Con Síntesis</span>' : s === 'na' ? '<span class="pill p-neutral">No lleva Síntesis</span>' : s === 'sin' ? '<span class="pill p-media">Falta Síntesis</span>' : '<span class="pill p-alta">No disponible</span>'; }
 /* listo = con Síntesis o recibido sin necesidad de Síntesis */
 function docCounts(list) { var ok = 0, na = 0, sin = 0, no = 0; list.forEach(function (d) { var s = docStat(d); if (s === 'ok') ok++; else if (s === 'na') na++; else if (s === 'sin') sin++; else no++; }); return { ok: ok, na: na, listo: ok + na, sin: sin, no: no, t: list.length }; }
-function meter(c) { return c.t ? '<div class="meter" role="img" aria-label="Avance de documentos"><i class="m-ok" style="width:' + c.listo / c.t * 100 + '%"></i><i class="m-mid" style="width:' + c.sin / c.t * 100 + '%"></i><i class="m-no" style="width:' + c.no / c.t * 100 + '%"></i></div>' : ''; }
+function meter(c) { return c.t ? '<div class="meter" role="img" aria-label="Avance de documentos: ' + c.listo + ' listos de ' + c.t + '"><i class="m-ok" style="width:' + c.listo / c.t * 100 + '%"></i><i class="m-mid" style="width:' + c.sin / c.t * 100 + '%"></i><i class="m-no" style="width:' + c.no / c.t * 100 + '%"></i></div>' : ''; }
 function evCard(e) {
   var n = days(e.desde), cnt = days(e.hasta) < 0 ? '<span class="days" style="font-size:16px">Finalizado</span>' : '<span class="days">' + Math.max(n, 0) + '<small>' + (n > 0 ? 'días' : 'en curso') + '</small></span>';
   return '<button type="button" class="ev-card" data-ev="' + esc(e.id) + '">' + cnt + '<b>' + esc(e.n) + '</b><span class="meta">' + esc(e.lugar) + ' · ' + range(e) + '</span><span><span class="pill p-neutral">' + esc(e.st) + '</span> <span class="mono muted">#' + esc(e.ad || '') + '</span></span></button>';
@@ -96,7 +184,8 @@ function delBtn(tabla, id, que) { return '<button type="button" class="btn ghost
 var NEXT = { 'Pendiente': ['Empezar', 'En Proceso'], 'En Proceso': ['Completar', 'Completadas'], 'Completadas': ['Reabrir', 'Pendiente'] };
 function taskHTML(t) {
   var p = ['alta', 'media', 'baja'].indexOf(t.prioridad) > -1 ? t.prioridad : 'media';
-  return '<div class="tk ' + p + (t.estado === 'Completadas' ? ' done' : '') + '"><div class="t">' + esc(t.titulo) + '</div><div class="m"><span class="mono">#' + esc(t.ad || '—') + '</span>' + (t.estado === 'En Proceso' ? '<span class="pill p-neutral">En proceso</span>' : '') + (t.estado === 'Completadas' ? '<span class="pill p-baja">Hecha</span>' : '') + '<button type="button" class="btn ghost edit" data-tk="' + esc(t.id) + '">' + NEXT[t.estado][0] + '</button>' + delBtn('tareas', t.id, 'la tarea "' + t.titulo + '"') + '</div></div>';
+  var nx = NEXT[t.estado] || NEXT.Pendiente;
+  return '<div class="tk ' + p + (t.estado === 'Completadas' ? ' done' : '') + '"><div class="t">' + esc(t.titulo) + '</div><div class="m"><span class="mono">#' + esc(t.ad || '—') + '</span>' + (t.estado === 'En Proceso' ? '<span class="pill p-neutral">En proceso</span>' : '') + (t.estado === 'Completadas' ? '<span class="pill p-baja">Hecha</span>' : '') + '<button type="button" class="btn ghost edit" data-tk="' + esc(t.id) + '">' + nx[0] + '</button>' + delBtn('tareas', t.id, 'la tarea "' + t.titulo + '"') + '</div></div>';
 }
 function novHTML(n) {
   var d = pd(n.fecha), i = DB.novs.indexOf(n);
@@ -104,6 +193,7 @@ function novHTML(n) {
 }
 function expOptions() { return DB.expList.map(function (x) { return '<option value="' + esc(x.ad) + '">#' + esc(x.ad) + ' ' + esc(x.nombre) + '</option>'; }).join(''); }
 function empty(msg) { return '<div class="panel empty-box">' + msg + '</div>'; }
+function memberName(id) { var m = DB.members.filter(function (x) { return x.id === id; })[0]; return m ? (m.nombre || m.email) : (id ? 'cuenta borrada' : 'sistema'); }
 
 /* ---------- vistas ---------- */
 function vInicio() {
@@ -122,7 +212,7 @@ function vInicio() {
     '<section class="panel"><header><h2>' + (cur ? esc(cur.n) + ': documentos' : 'Documentos') + '</h2>' + (cur ? '<button class="btn" data-ev="' + esc(cur.id) + '" data-go="docs" type="button">Abrir</button>' : '') + '</header><div class="body" style="display:grid;gap:10px">' +
     '<div><b class="mono" style="font-size:22px">' + cn.listo + '</b> <span class="muted">de ' + cn.t + ' listos</span></div>' + meter(cn) +
     '<div class="note">' + cn.ok + ' con Síntesis · ' + (cn.na ? cn.na + ' no la llevan · ' : '') + cn.sin + ' recibidos sin Síntesis · ' + cn.no + ' aún no disponibles</div></div></section>' +
-    '<section class="panel"><header><h2>En espera (Qrx)</h2><span class="pill p-media">' + q.length + '</span></header><div class="body">' + (q.length ? q.map(function (n) { return '<div style="padding:6px 0;border-bottom:1px solid var(--line)"><span class="mono muted">#' + esc(n.ad) + ' · ' + fm(n.fecha) + '</span><div>' + esc(n.texto) + '</div></div>'; }).join('') : '<div class="empty-box">Nada en espera.</div>') + '</div></section>' +
+    '<section class="panel"><header><h2>En espera (Qrx)</h2><span class="pill p-media">' + q.length + '</span></header><div class="body">' + (q.length ? q.map(function (n) { return '<div style="padding:6px 0;border-bottom:1px solid var(--line)"><span class="mono muted">#' + esc(n.ad) + ' · ' + fm(n.fecha) + '</span><div class="wrapw">' + esc(n.texto) + '</div></div>'; }).join('') : '<div class="empty-box">Nada en espera.</div>') + '</div></section>' +
     '</div></div>';
 }
 function vSemana() {
@@ -209,7 +299,7 @@ function docsTable(list) {
   function ch(k, label, opts) { return '<div class="chips"><span class="gl">' + label + '</span>' + opts.map(function (o) { return '<button class="chip" type="button" data-f="' + k + '" data-fv="' + o[0] + '" aria-pressed="' + (f[k] === o[0]) + '">' + o[1] + '</button>'; }).join('') + '</div>'; }
   function link(u, txt) { var s = safeUrl(u); return s ? '<a class="lnk" href="' + esc(s) + '" target="_blank" rel="noopener noreferrer">' + txt + '</a>' : null; }
   return '<div style="display:flex;flex-wrap:wrap;gap:12px 24px">' + ch('est', 'Estado', [['todos', 'Todos'], ['ok', 'Con Síntesis'], ['sin', 'Sin Síntesis'], ['na', 'No lleva Síntesis'], ['falta', 'No disponible']]) + ch('rel', 'Relevancia', [['todos', 'Todas'], ['alta', 'Alta'], ['media', 'Media'], ['baja', 'Baja']]) + ch('g', 'Grupo', [['todos', 'Todos'], ['P', 'Plenario'], ['S', 'Subcomités'], ['I', 'Informativos']]) + '</div>' +
-    '<div class="note" style="margin:8px 0">Mostrando ' + rows.length + ' de ' + list.length + ' documentos</div>' +
+    '<div class="note" style="margin:8px 0" role="status">Mostrando ' + rows.length + ' de ' + list.length + ' documentos</div>' +
     '<div class="panel tbox"><table><thead><tr><th>Punto</th><th>Documento</th><th>Asunto</th><th>Relevancia</th><th>Idioma</th><th>Estado</th><th>Documento</th><th>Síntesis (Doc)</th></tr></thead><tbody>' +
     (rows.length ? rows.map(function (d) {
       var lleva = d.lleva_sintesis !== false;
@@ -225,7 +315,7 @@ function vEventos() {
   if (!DB.eventos.length) return '<div class="head"><div><h1>Eventos</h1></div></div>' + empty('Todavía no hay eventos cargados. Quien administra los carga desde el panel de la base.');
   var e = evById(S.ev), list = DB.docs[e.id] || [], c = docCounts(list);
   var tabs = [['resumen', 'Resumen'], ['docs', 'Documentos'], ['tareas', 'Tareas'], ['novs', 'Novedades'], ['recursos', 'Recursos']];
-  var tb = '<div class="tabs" role="tablist">' + tabs.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '"' + (S.tab === t[0] ? ' aria-current="true"' : '') + '>' + t[1] + '</button>'; }).join('') + '</div>';
+  var tb = '<div class="tabs" role="tablist" aria-label="Secciones del evento">' + tabs.map(function (t) { return '<button type="button" role="tab" id="tab-' + t[0] + '" aria-controls="tabpanel" data-tab="' + t[0] + '" aria-selected="' + (S.tab === t[0]) + '">' + t[1] + '</button>'; }).join('') + '</div>';
   var body = '';
   if (S.tab === 'resumen') {
     body = '<div class="kpis"><div class="kpi"><div class="n">' + Math.max(days(e.desde), 0) + '</div><div class="l">días para el inicio</div></div><div class="kpi"><div class="n">' + c.t + '</div><div class="l">documentos en seguimiento</div></div><div class="kpi"><div class="n">' + c.listo + '</div><div class="l">listos (con Síntesis o sin necesidad)</div></div><div class="kpi"><div class="n">' + DB.tareas.filter(function (t) { return t.ad === e.ad && t.estado !== 'Completadas'; }).length + '</div><div class="l">tareas abiertas</div></div></div>' +
@@ -245,7 +335,19 @@ function vEventos() {
   }
   return '<div class="head"><div><h1>Eventos</h1><p>Cada evento reúne sus documentos, tareas, novedades y recursos.</p></div></div>' +
     '<div class="ev-layout"><div class="ev-list">' + DB.eventos.map(function (x) { return '<button type="button" data-ev="' + esc(x.id) + '"' + (x.id === S.ev ? ' aria-current="true"' : '') + '><b>' + esc(x.n) + '</b><span>' + range(x) + ' · ' + esc(x.lugar) + '</span></button>'; }).join('') + '</div>' +
-    '<div style="display:flex;flex-direction:column;gap:16px;min-width:0"><div><h2 style="font-size:20px">' + esc(e.n) + '</h2><div class="muted" style="margin-top:2px">' + esc(e.lugar) + ' · ' + range(e) + ' · <span class="pill p-neutral">' + esc(e.st) + '</span> ' + delBtn('eventos', e.id, 'el evento "' + e.n + '" junto con sus ' + list.length + ' documentos y sus recursos') + '</div></div>' + tb + body + '</div></div>';
+    '<div style="display:flex;flex-direction:column;gap:16px;min-width:0"><div><h2 style="font-size:20px">' + esc(e.n) + '</h2><div class="muted" style="margin-top:2px">' + esc(e.lugar) + ' · ' + range(e) + ' · <span class="pill p-neutral">' + esc(e.st) + '</span> ' + delBtn('eventos', e.id, 'el evento "' + e.n + '" junto con sus ' + list.length + ' documentos y sus recursos') + '</div></div>' + tb + '<div id="tabpanel" role="tabpanel" aria-labelledby="tab-' + S.tab + '" style="display:flex;flex-direction:column;gap:16px;min-width:0">' + body + '</div></div></div>';
+}
+/* Resumen de una fila de auditoría: qué fila y qué columnas cambiaron. */
+var OPS = { INSERT: 'Alta', UPDATE: 'Cambio', DELETE: 'Borrado' };
+function auditRow(a) {
+  var row = a.despues || a.antes || {};
+  var what = String(row.titulo || row.texto || row.codigo || row.nombre || row.email || a.fila || '');
+  if (what.length > 80) what = what.slice(0, 80) + '…';
+  var cambios = '';
+  if (a.operacion === 'UPDATE' && a.antes && a.despues) {
+    cambios = Object.keys(a.despues).filter(function (k) { return JSON.stringify(a.antes[k]) !== JSON.stringify(a.despues[k]); }).join(', ');
+  }
+  return '<tr><td class="mono">' + esc(fdt(a.momento)) + '</td><td>' + esc(memberName(a.usuario)) + ' <span class="muted">' + esc(a.rol || '') + '</span></td><td>' + esc(OPS[a.operacion] || a.operacion) + '</td><td class="mono">' + esc(a.tabla) + '</td><td>' + esc(what) + (cambios ? '<div class="note">Cambió: ' + esc(cambios) + '</div>' : '') + '</td></tr>';
 }
 function vMiembros() {
   return '<div class="head"><div><h1>Miembros</h1><p>Solo las cuentas invitadas pueden entrar. No hay registro abierto.</p></div></div>' +
@@ -260,15 +362,45 @@ function vMiembros() {
     '<label for="ii">Iniciales<input id="ii" type="text" maxlength="8"></label>' +
     '<label for="ir">Rol<select id="ir"><option value="">Sin rol (lo asignás después)</option>' + Object.keys(ROLES).map(function (k) { return '<option value="' + k + '">' + ROLES[k] + '</option>'; }).join('') + '</select></label></div>' +
     '<div><button class="btn primary" type="submit">Enviar invitación</button></div></form>' +
-    '<p class="note" style="margin:8px 0 0">La persona recibe un correo para crear su clave (mínimo 12 caracteres). Para dar de baja a alguien, borrarlo desde el panel de Supabase: Authentication, Users.</p></div></section>';
+    '<p class="note" style="margin:8px 0 0">La persona recibe un correo para crear su clave (mínimo 12 caracteres). Para dar de baja a alguien, borrarlo desde el panel de Supabase: Authentication, Users.</p></div></section>' +
+    '<section class="panel"><header><h2>Registro de cambios</h2><span class="note">Últimos 50 · altas, cambios y borrados de todo el portal</span></header>' +
+    (DB.audit.length ? '<div class="tbox"><table style="min-width:720px"><thead><tr><th>Cuándo</th><th>Quién</th><th>Qué</th><th>Tabla</th><th>Detalle</th></tr></thead><tbody>' + DB.audit.map(auditRow).join('') + '</tbody></table></div>' : '<div class="empty-box">Todavía no hay cambios registrados.</div>') + '</section>' +
+    '<section class="panel"><header><h2>Errores de la página</h2><span class="note">Últimos 30 · sin datos de expedientes</span></header>' +
+    (DB.errs.length ? '<div class="tbox"><table style="min-width:720px"><thead><tr><th>Cuándo</th><th>Quién</th><th>Vista</th><th>Mensaje</th></tr></thead><tbody>' + DB.errs.map(function (x) { return '<tr><td class="mono">' + esc(fdt(x.momento)) + '</td><td>' + esc(memberName(x.usuario)) + '</td><td class="mono">' + esc(x.vista) + '</td><td class="wrapw">' + esc(x.mensaje) + '<div class="note">' + esc(x.navegador) + '</div></td></tr>'; }).join('') + '</tbody></table></div>' : '<div class="empty-box">Sin errores registrados.</div>') + '</section>';
 }
-var V = { inicio: vInicio, semana: vSemana, novedades: vNov, eventos: vEventos, miembros: vMiembros };
+function enrollHTML() {
+  if (!S.enroll) return '<button class="btn primary" type="button" data-act="mfa-on">Empezar</button>';
+  return '<ol class="steps"><li>Instalá una app de códigos en tu celular (Google Authenticator, Microsoft Authenticator u otra).</li>' +
+      '<li>En la app, agregá una cuenta escaneando este código:' + (S.enroll.qr ? '<div class="qr"><img src="' + esc(S.enroll.qr) + '" alt="Código QR para agregar el Portal CE a la app de códigos" width="180" height="180"></div>' : '') +
+      '<div class="note">Si no podés escanearlo, cargá esta clave a mano: <span class="mono secret">' + esc(S.enroll.secret) + '</span></div></li>' +
+      '<li>Escribí el código de 6 números que muestra la app.</li></ol>' +
+      '<form class="form" id="enrf"><label for="ec">Código de la app<input id="ec" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label>' +
+      '<div class="chips"><button class="btn primary" type="submit">Confirmar y activar</button><button class="btn" type="button" data-act="mfa-cancel">Cancelar</button></div></form>';
+}
+function vEnrollGate() {
+  var em = S.session && S.session.user ? S.session.user.email : '';
+  return '<main class="wrap"><section class="panel login" style="max-width:520px"><h1 class="mark">Portal CE</h1>' +
+    '<p style="margin:0">Para entrar al portal hace falta el <b>segundo factor</b>: además de la clave, un código de 6 números que genera una app en tu celular. Se configura una sola vez.</p>' +
+    '<p class="note" style="margin:0">Cuenta: <span class="mono">' + esc(em) + '</span></p>' + enrollHTML() +
+    '<button class="btn ghost" type="button" data-act="logout">Salir</button></section></main>';
+}
+function vCuenta() {
+  var u = S.me;
+  var mfa = '<p><span class="pill p-baja">Activo</span> Al ingresar se te pide la clave y el código de la app.</p>' +
+    '<button class="btn" type="button" data-act="mfa-off">Cambiar de celular</button><p class="note">Se borra el código actual y, antes de seguir, configurás el celular nuevo.</p>';
+  return '<div class="head"><div><h1>Mi cuenta</h1><p>Tus datos y la seguridad de tu ingreso.</p></div></div>' +
+    '<section class="panel"><header><h2>Datos</h2></header><div class="body"><dl class="kv"><dt>Nombre</dt><dd>' + esc(u.nombre || '—') + '</dd><dt>Correo</dt><dd class="mono">' + esc(u.email) + '</dd><dt>Rol</dt><dd>' + esc(ROLES[u.rol] || '—') + '</dd><dt>Iniciales</dt><dd class="mono">' + esc(u.iniciales || '—') + '</dd></dl></div></section>' +
+    '<section class="panel"><header><h2>Segundo factor (código en el celular)</h2></header><div class="body">' + mfa + '</div></section>' +
+    '<section class="panel"><header><h2>Sesión</h2></header><div class="body"><p style="margin-top:0">La sesión se cierra sola después de 30 minutos sin uso. Tocá <b>Salir</b> al terminar, sobre todo en una computadora compartida.</p><button class="btn" type="button" data-act="logout">Salir</button></div></section>';
+}
+var V = { inicio: vInicio, semana: vSemana, novedades: vNov, eventos: vEventos, miembros: vMiembros, cuenta: vCuenta };
+var TITLES = { inicio: 'Inicio', semana: 'Semana', novedades: 'Novedades', eventos: 'Eventos', miembros: 'Miembros', cuenta: 'Mi cuenta' };
 
 function vSetup() {
   return '<main class="wrap"><div class="panel setup"><h2>Falta configurar el portal</h2><p>Abrí <span class="mono">js/config.js</span> y pegá la clave pública del proyecto de Supabase (Project Settings, API Keys, clave publishable).</p></div></main>';
 }
 function vLogin() {
-  return '<main class="wrap"><form class="panel login form" id="lf"><div class="mark">Portal CE</div><div class="muted">Ingresá con la cuenta que te dio el equipo.</div>' +
+  return '<main class="wrap"><form class="panel login form" id="lf"><h1 class="mark">Portal CE</h1><div class="muted">Ingresá con la cuenta que te dio el equipo.</div>' +
     (S.err ? '<div class="err" role="alert">' + esc(S.err) + '</div>' : '') +
     '<label for="lm">Correo<input id="lm" type="email" placeholder="nombre@ejemplo.com" autocomplete="username" required></label>' +
     '<label for="lp">Clave<input id="lp" type="password" placeholder="••••••••" autocomplete="current-password" required></label>' +
@@ -277,72 +409,112 @@ function vLogin() {
     '<p class="note" style="margin:0">¿No tenés cuenta? Pedísela a quien administra el portal. No hay registro abierto.</p></form></main>';
 }
 function vSetPw() {
-  return '<main class="wrap"><form class="panel login form" id="pwf"><div class="mark">Portal CE</div><div class="muted">Elegí tu clave para entrar al portal.</div>' +
+  return '<main class="wrap"><form class="panel login form" id="pwf"><h1 class="mark">Portal CE</h1><div class="muted">Elegí tu clave para entrar al portal.</div>' +
     (S.err ? '<div class="err" role="alert">' + esc(S.err) + '</div>' : '') +
     '<label for="np">Clave nueva (mínimo 12 caracteres)<input id="np" type="password" minlength="12" autocomplete="new-password" required></label>' +
     '<label for="np2">Repetir la clave<input id="np2" type="password" minlength="12" autocomplete="new-password" required></label>' +
     '<button class="btn primary" type="submit" style="padding:10px">Guardar clave</button></form></main>';
 }
+function vMfaCode() {
+  return '<main class="wrap"><form class="panel login form" id="mfaf"><h1 class="mark">Portal CE</h1><div class="muted">Escribí el código de 6 números que muestra la app de tu celular.</div>' +
+    (S.err ? '<div class="err" role="alert">' + esc(S.err) + '</div>' : '') +
+    '<label for="mc">Código<input id="mc" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label>' +
+    '<button class="btn primary" type="submit" style="padding:10px">Verificar</button>' +
+    '<button class="btn ghost" type="button" data-act="logout">Salir</button>' +
+    '<p class="note" style="margin:0">¿Perdiste el celular? Pedile a quien administra que quite tu segundo factor desde el panel de Supabase.</p></form></main>';
+}
 function vNoRole() {
   return '<main class="wrap"><div class="panel setup"><h2>Tu cuenta todavía no tiene rol</h2><p>Pedile a quien administra el portal que te asigne un rol y volvé a ingresar.</p><button class="btn" type="button" data-act="logout">Salir</button></div></main>';
 }
+function vConnErr() {
+  return '<main class="wrap"><div class="panel setup" role="alert"><h2>No se pudo conectar con la base</h2><p>Revisá la conexión a internet y probá de nuevo.</p><div class="chips"><button class="btn primary" type="button" data-act="retry">Reintentar</button><button class="btn" type="button" data-act="logout">Salir</button></div></div></main>';
+}
 function frame() {
   var u = S.me;
+  var main = S.dataErr
+    ? '<div class="panel empty-box" role="alert">' + esc(S.dataErr) + '<div style="margin-top:12px"><button class="btn primary" type="button" data-act="retry">Reintentar</button></div></div>'
+    : V[S.view]();
   return '<div class="bar"><div class="bar-in"><div class="brand">Portal CE <small>Comité Ejecutivo</small></div><nav class="nav" aria-label="Secciones">' +
     NAV.map(function (n) { return '<button type="button" class="' + (n[2] || '') + '" data-v="' + n[0] + '"' + (S.view === n[0] ? ' aria-current="page"' : '') + '>' + n[1] + '</button>'; }).join('') +
-    '</nav><div class="who"><span class="avatar" aria-hidden="true">' + esc((u.nombre || u.email).slice(0, 2).toUpperCase()) + '</span><span>' + esc(u.nombre || u.email) + ' <span class="muted">· ' + ROLES[u.rol] + '</span></span><button class="btn ghost" type="button" data-act="logout">Salir</button></div></div></div>' +
-    '<main class="wrap" id="view">' + (S.err ? '<div class="panel empty-box">' + esc(S.err) + '</div>' : V[S.view]()) + '</main>';
+    '</nav><div class="who"><span class="avatar" aria-hidden="true">' + esc((u.nombre || u.email).slice(0, 2).toUpperCase()) + '</span><span>' + esc(u.nombre || u.email) + ' <span class="muted">· ' + esc(ROLES[u.rol] || '') + '</span></span><button class="btn ghost" type="button" data-act="logout">Salir</button></div></div></div>' +
+    '<main class="wrap" id="view">' + main + '</main>';
+}
+/* Para devolver el foco al mismo control después de redibujar (teclado y lectores de pantalla). */
+function focusSel(el) {
+  if (!el || el === document.body || !el.closest || !el.closest('#app')) return null;
+  if (el.id) return '#' + CSS.escape(el.id);
+  var a = [].slice.call(el.attributes).filter(function (x) { return x.name.indexOf('data-') === 0; });
+  if (!a.length) return null;
+  return el.tagName.toLowerCase() + a.map(function (x) { return '[' + x.name + '="' + CSS.escape(x.value) + '"]'; }).join('');
+}
+function paint(html) {
+  var app = $('#app'), sel = focusSel(document.activeElement);
+  app.innerHTML = html;
+  if (sel) { var n = app.querySelector(sel); if (n) n.focus({ preventScroll: true }); }
 }
 function render() {
-  var app = $('#app');
-  if (!configured) { app.innerHTML = vSetup(); return; }
-  if (S.loading) { app.innerHTML = '<div class="loading">Cargando…</div>'; return; }
-  if (S.setpw && S.session) { document.body.removeAttribute('data-role'); app.innerHTML = vSetPw(); return; }
-  if (!S.session) { document.body.removeAttribute('data-role'); app.innerHTML = vLogin(); return; }
-  if (S.noRole || !S.me) { app.innerHTML = vNoRole(); return; }
-  document.body.dataset.role = S.me.rol;
-  if (S.view === 'miembros' && S.me.rol !== 'admin') S.view = 'inicio';
-  app.innerHTML = frame();
+  if (!configured) { paint(vSetup()); return; }
+  if (S.loading) { paint('<div class="loading" role="status">Cargando…</div>'); return; }
+  if (S.setpw && S.session) { document.body.removeAttribute('data-role'); document.title = 'Elegir clave · Portal CE'; paint(vSetPw()); return; }
+  if (!S.session) { document.body.removeAttribute('data-role'); document.title = 'Ingresar · Portal CE'; paint(vLogin()); return; }
+  if (S.needCode) { document.body.removeAttribute('data-role'); document.title = 'Código · Portal CE'; paint(vMfaCode()); return; }
+  if (S.needEnroll) { document.body.removeAttribute('data-role'); document.title = 'Segundo factor · Portal CE'; paint(vEnrollGate()); return; }
+  if (S.connErr) { paint(vConnErr()); return; }
+  if (S.noRole || !S.me) { paint(vNoRole()); return; }
+  document.body.dataset.role = uiRole();
+  if (!V[S.view] || (S.view === 'miembros' && !isAdmin())) S.view = 'inicio';
+  document.title = TITLES[S.view] + ' · Portal CE';
+  paint(frame());
 }
 function keepScroll(fn) { var y = window.scrollY; fn(); window.scrollTo(0, y); }
+/* Cambiar de sección deja una entrada en el historial: el botón Atrás del celular vuelve a la anterior. */
+function go(v) {
+  S.view = v;
+  if (location.hash.slice(1) !== v) history.pushState(null, '', '#' + v);
+  render(); window.scrollTo(0, 0);
+}
+window.addEventListener('popstate', function () { var h = location.hash.slice(1); if (V[h] && S.me) { S.view = h; render(); } });
 
 /* ---------- acciones ---------- */
 document.addEventListener('click', async function (e) {
   var b = e.target.closest('button'); if (!b) return;
   var d = b.dataset;
-  if (d.ev) { S.ev = d.ev; S.view = 'eventos'; S.tab = d.go || 'resumen'; S.f = { est: 'todos', rel: 'todos', g: 'todos' }; render(); window.scrollTo(0, 0); return; }
-  if (d.v) { S.view = d.v; render(); window.scrollTo(0, 0); return; }
+  if (d.ev) { S.ev = d.ev; S.tab = d.go || 'resumen'; S.f = { est: 'todos', rel: 'todos', g: 'todos' }; go('eventos'); return; }
+  if (d.v) { go(d.v); return; }
   if (d.tab) { S.tab = d.tab; render(); return; }
   if (d.f) { S.f[d.f] = d.fv; keepScroll(render); return; }
   if (d.tf) { S.tf = d.tf; render(); return; }
   if (d.wk != null) { S.wk = d.wk === '0' ? 0 : S.wk + (+d.wk); render(); return; }
   if (d.tk) {
     var t = DB.tareas.filter(function (x) { return x.id === d.tk; })[0];
-    if (t) { var y = window.scrollY; await run(sb.from('tareas').update({ estado: NEXT[t.estado][1] }).eq('id', t.id)); window.scrollTo(0, y); }
+    if (t) await lock(b, async function () { var y = window.scrollY; await run(sb.from('tareas').update({ estado: (NEXT[t.estado] || NEXT.Pendiente)[1] }).eq('id', t.id)); window.scrollTo(0, y); });
     return;
   }
   if (d.doc) {
     var patch = { r: { recibido: true }, s: { sintesis: true }, n: { lleva_sintesis: false }, l: { lleva_sintesis: true } }[d.do];
     if (!patch) return;
-    var y2 = window.scrollY; await run(sb.from('documentos').update(patch).eq('id', d.doc), 'Documento actualizado'); window.scrollTo(0, y2);
+    await lock(b, async function () { var y2 = window.scrollY; await run(sb.from('documentos').update(patch).eq('id', d.doc), 'Documento actualizado'); window.scrollTo(0, y2); });
     return;
   }
   if (d.del) {
-    if (!DEL_CLS[d.del] || !confirm('¿Borrar ' + d.que + '?\n\nNo se puede deshacer.')) return;
-    // Con .select() se sabe si la base borró algo: si las reglas no lo permiten, no da error, borra cero filas.
-    var r = await sb.from(d.del).delete().eq('id', d.id).select('id');
-    if (r.error) { toast('No se pudo borrar: ' + r.error.message); return; }
-    if (!r.data.length) { toast('No se borró: tu rol no lo permite o ya no existe.'); return; }
-    if (d.del === 'eventos') S.ev = null;
-    toast('Borrado');
-    var y4 = window.scrollY; await reload(); window.scrollTo(0, y4);
+    if (!DEL_CLS[d.del] || !confirm('¿Borrar ' + d.que + '?\n\nNo se puede deshacer desde el portal (queda copia en el registro de cambios).')) return;
+    await lock(b, async function () {
+      // Con .select() se sabe si la base borró algo: si las reglas no lo permiten, no da error, borra cero filas.
+      var r = await sb.from(d.del).delete().eq('id', d.id).select('id');
+      if (r.error) { saveFail(r, 'borrar'); return; }
+      if (!r.data.length) { toast('No se borró: tu rol no lo permite o ya no existe.'); return; }
+      if (d.del === 'eventos') S.ev = null;
+      toast('Borrado');
+      var y4 = window.scrollY; await reload(); window.scrollTo(0, y4);
+    });
     return;
   }
-  if (d.act) { await act(d.act); return; }
+  if (d.act) { await lock(b, function () { return act(d.act); }); return; }
   if (d.cal) { calAct(b); }
 });
 async function act(a) {
-  if (a === 'logout') { await sb.auth.signOut(); return; }
+  if (a === 'logout') { clearAct(); S.err = ''; await sb.auth.signOut(); return; }
+  if (a === 'retry') { await boot(S.session); return; }
   if (a === 'forgot') {
     var em = ($('#lm') || {}).value;
     if (!em) { toast('Escribí tu correo y volvé a tocar el botón'); return; }
@@ -358,9 +530,41 @@ async function act(a) {
   if (a === 'addnov') {
     var t = $('#nt').value.trim(); if (!t) { toast('Escribí la novedad'); return; }
     var ad = $('#nad').value; if (!ad) { toast('Elegí un expediente'); return; }
-    var f = $('#nf').value || ds(T0);
-    var ok2 = await run(sb.from('novedades').insert({ texto: t, ad: ad, fecha: f, autor: $('#ni').value || S.me.iniciales, qrx: $('#nq').checked }), 'Novedad guardada');
-    if (ok2 && $('#ntk') && $('#ntk').checked) { await run(sb.from('tareas').insert({ titulo: 'Seguimiento: ' + t.slice(0, 60), dia: f, ad: ad, prioridad: 'media' })); }
+    var f = $('#nf').value || ds(T0), withTask = $('#ntk') && $('#ntk').checked;
+    var r1 = await sb.from('novedades').insert({ texto: t, ad: ad, fecha: f, autor: $('#ni').value || S.me.iniciales, qrx: $('#nq').checked });
+    if (r1.error) { saveFail(r1); return; }
+    if (withTask) {
+      var r2 = await sb.from('tareas').insert({ titulo: 'Seguimiento: ' + t.slice(0, 60), dia: f, ad: ad, prioridad: 'media' });
+      if (r2.error) { saveFail(r2, 'crear la tarea'); await reload(); return; }
+    }
+    toast(withTask ? 'Novedad y tarea guardadas' : 'Novedad guardada');
+    await reload();
+    return;
+  }
+  if (a === 'mfa-on') {
+    /* Si quedó un alta a medias, se descarta antes de empezar otra. */
+    var l = await sb.auth.mfa.listFactors();
+    var pend = ((l.data && l.data.all) || []).filter(function (x) { return x.factor_type === 'totp' && x.status !== 'verified'; });
+    for (var i = 0; i < pend.length; i++) { await sb.auth.mfa.unenroll({ factorId: pend[i].id }); }
+    var en = await sb.auth.mfa.enroll({ factorType: 'totp', friendlyName: 'Portal CE ' + ds(new Date()) + ' ' + Date.now() % 10000 });
+    if (en.error) { toast('No se pudo empezar: ' + en.error.message); report('mfa enroll: ' + en.error.message, true); return; }
+    var qr = String(en.data.totp.qr_code || '');
+    S.enroll = { id: en.data.id, qr: /^data:image\/svg\+xml/.test(qr) ? qr : '', secret: en.data.totp.secret };
+    render();
+    var c = $('#ec'); if (c) c.focus();
+    return;
+  }
+  if (a === 'mfa-cancel') {
+    if (S.enroll) { try { await sb.auth.mfa.unenroll({ factorId: S.enroll.id }); } catch (x) { } }
+    S.enroll = null; render(); return;
+  }
+  if (a === 'mfa-off') {
+    if (!S.factors.length || !confirm('¿Cambiar de celular?\n\nSe borra el código actual y, antes de seguir usando el portal, vas a configurar el celular nuevo.')) return;
+    var un = await sb.auth.mfa.unenroll({ factorId: S.factors[0].id });
+    if (un.error) { toast('No se pudo quitar: ' + un.error.message); return; }
+    await sb.auth.refreshSession();
+    toast('Configurá el celular nuevo');
+    await rebootNow();
     return;
   }
 }
@@ -372,38 +576,75 @@ function calAct(b) {
   else if (a === 'tipo') { var k = b.dataset.k, c = S.cal; c.tipo = k; c.rem = TIPOS[k].rem.slice(); c.dur = TIPOS[k].dur || 60; render(); }
   else if (a === 'rem') { var m = +b.dataset.m, i = S.cal.rem.indexOf(m); if (i > -1) S.cal.rem.splice(i, 1); else S.cal.rem.push(m); render(); }
 }
+function loginError(err) {
+  if (!err) return '';
+  if (err.code === 'invalid_credentials' || /invalid login/i.test(err.message || '')) return 'Correo o clave incorrectos.';
+  if (err.status === 429 || /rate limit/i.test(err.message || '')) return 'Demasiados intentos. Esperá unos minutos y probá de nuevo.';
+  if (err.code === 'email_not_confirmed') return 'Todavía no confirmaste tu correo. Buscá el mensaje de invitación.';
+  return 'No se pudo conectar. Revisá la conexión y probá de nuevo.';
+}
 document.addEventListener('submit', async function (e) {
-  if (e.target.id === 'lf') {
-    e.preventDefault();
-    var r = await sb.auth.signInWithPassword({ email: $('#lm').value.trim(), password: $('#lp').value });
-    if (r.error) { S.err = 'Correo o clave incorrectos.'; render(); }
+  var form = e.target, btn = form.querySelector('button[type=submit]');
+  if (['lf', 'pwf', 'mfaf', 'enrf', 'invf'].indexOf(form.id) < 0) return;
+  e.preventDefault();
+  if (form.id === 'lf') {
+    await lock(btn, async function () {
+      S.fresh = true;
+      var r = await sb.auth.signInWithPassword({ email: $('#lm').value.trim(), password: $('#lp').value });
+      if (r.error) { S.fresh = false; S.err = loginError(r.error); render(); } else S.err = '';
+    }, 'Ingresando…');
     return;
   }
-  if (e.target.id === 'pwf') {
-    e.preventDefault();
+  if (form.id === 'pwf') {
     var p1 = $('#np').value, p2 = $('#np2').value;
     if (p1 !== p2) { S.err = 'Las claves no coinciden.'; render(); return; }
     if (p1.length < 12) { S.err = 'La clave debe tener al menos 12 caracteres.'; render(); return; }
-    var u = await sb.auth.updateUser({ password: p1 });
-    if (u.error) { S.err = 'No se pudo guardar la clave: ' + u.error.message; render(); return; }
-    S.setpw = false; S.err = ''; history.replaceState(null, '', location.pathname);
-    toast('Clave guardada');
-    boot(S.session);
+    await lock(btn, async function () {
+      var u = await sb.auth.updateUser({ password: p1 });
+      if (u.error) { S.err = 'No se pudo guardar la clave: ' + u.error.message; render(); return; }
+      S.setpw = false; S.err = ''; history.replaceState(null, '', location.pathname);
+      toast('Clave guardada');
+      await boot(S.session);
+    }, 'Guardando…');
+    return;
   }
-  if (e.target.id === 'invf') {
-    e.preventDefault();
-    var btn = e.target.querySelector('button[type=submit]');
-    if (btn.disabled || !S.me || S.me.rol !== 'admin') return;
+  if (form.id === 'mfaf') {
+    var code = $('#mc').value.trim();
+    await lock(btn, async function () {
+      var f = await sb.auth.mfa.listFactors();
+      var tf = f.data && f.data.totp && f.data.totp[0];
+      if (!tf) { S.err = 'No se encontró el segundo factor de tu cuenta.'; render(); return; }
+      var v = await sb.auth.mfa.challengeAndVerify({ factorId: tf.id, code: code });
+      if (v.error) { S.err = 'Código incorrecto o vencido. Probá con el código nuevo que muestra la app.'; render(); return; }
+      S.err = ''; S.needCode = false; touch();
+      await rebootNow();
+    }, 'Verificando…');
+    return;
+  }
+  if (form.id === 'enrf') {
+    var ec = $('#ec').value.trim();
+    await lock(btn, async function () {
+      var v = await sb.auth.mfa.challengeAndVerify({ factorId: S.enroll.id, code: ec });
+      if (v.error) { toast('Código incorrecto o vencido. Probá con el código nuevo.'); return; }
+      S.enroll = null;
+      toast('Segundo factor activado');
+      await rebootNow();
+    }, 'Verificando…');
+    return;
+  }
+  if (form.id === 'invf') {
+    if (!isAdmin()) return;
     var body = { email: $('#ie').value.trim(), nombre: $('#in').value.trim(), iniciales: $('#ii').value.trim(), rol: $('#ir').value, redirectTo: location.origin + location.pathname };
-    btn.disabled = true; btn.textContent = 'Enviando…';
-    var res = await sb.functions.invoke('invitar', { body: body });
-    if (res.error) {
-      var msg = 'No se pudo invitar: ' + res.error.message;
-      try { msg = (await res.error.context.json()).error || msg; } catch (x) { }
-      btn.disabled = false; btn.textContent = 'Enviar invitación'; toast(msg); return;
-    }
-    toast('Invitación enviada a ' + body.email);
-    var y3 = window.scrollY; await reload(); window.scrollTo(0, y3);
+    await lock(btn, async function () {
+      var res = await sb.functions.invoke('invitar', { body: body });
+      if (res.error) {
+        var msg = 'No se pudo invitar: ' + res.error.message;
+        try { msg = (await res.error.context.json()).error || msg; } catch (x) { }
+        toast(msg); return;
+      }
+      toast('Invitación enviada a ' + body.email);
+      var y3 = window.scrollY; await reload(); window.scrollTo(0, y3);
+    }, 'Enviando…');
   }
 });
 document.addEventListener('input', function (e) {
@@ -413,16 +654,21 @@ document.addEventListener('input', function (e) {
 });
 document.addEventListener('change', async function (e) {
   var t = e.target;
-  if (t.dataset && t.dataset.rol && S.me && S.me.rol === 'admin') {
-    await run(sb.from('members').update({ rol: t.value }).eq('id', t.dataset.rol), 'Rol actualizado');
+  if (t.dataset && t.dataset.rol && isAdmin()) {
+    t.disabled = true;
+    /* si la base lo rechaza, se redibuja para que el selector vuelva al rol real */
+    if (!await run(sb.from('members').update({ rol: t.value }).eq('id', t.dataset.rol), 'Rol actualizado')) render();
   }
 });
 
 /* ---------- arranque ---------- */
 if (configured) {
   sb.auth.onAuthStateChange(function (event, session) {
+    if (event === 'SIGNED_OUT') { S.session = null; S.me = null; S.setpw = false; S.needCode = false; S.needEnroll = false; S.enroll = null; S.loading = false; S.aal = 'aal1'; DB = emptyDB(); render(); return; }
+    /* Sesión guardada de hace más de 30 minutos sin uso: no se retoma. */
+    if (session && !S.fresh && stale()) { setTimeout(idleLogout, 0); return; }
+    if (S.fresh && session) { S.fresh = false; touch(); }
     if (event === 'PASSWORD_RECOVERY') S.setpw = true;
-    if (event === 'SIGNED_OUT') { S.session = null; S.me = null; S.setpw = false; S.loading = false; DB = { eventos: [], exp: {}, expList: [], docs: {}, tareas: [], novs: [], recursos: [], members: [] }; render(); return; }
     if (event === 'SIGNED_IN' && S.me && session && S.me.id === session.user.id && !S.setpw) return; /* volver a la pestaña no recarga todo */
     if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY') {
       /* diferido: no se hacen llamadas a Supabase dentro del propio evento */

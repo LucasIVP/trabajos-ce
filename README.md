@@ -27,3 +27,9 @@ Este repositorio es **público**: contiene solo código. Los datos, las claves p
 - Roles: `lectura` (ve), `edicion` (carga tareas, novedades y estado de documentos) y `admin` (además gestiona miembros y eventos).
 - Nunca subir al repo: la clave `service_role`, la contraseña de la base, tokens de otros servicios ni archivos `.env`.
 - `index.html` incluye una política de seguridad de contenido (CSP) por etiqueta meta. Si cambia la dirección del proyecto de Supabase, hay que actualizarla ahí también.
+- **Segundo factor obligatorio para todos** (app de códigos TOTP). La base no entrega ni acepta nada de una sesión que no pasó el código (`aal2`); la página obliga a configurarlo al primer ingreso. Si alguien pierde el celular, se le borra el factor desde el panel de Supabase (Authentication, Users) y lo vuelve a configurar.
+- **Registro de cambios:** toda alta, cambio y borrado queda copiado en `auditoria` (solo lo lee admin, nadie lo modifica desde la API). Los errores de la página van a `errores`, sin textos de datos.
+- **Permisos por columna:** cada rol solo escribe las columnas que la página usa; nadie cambia su propio rol y siempre queda al menos un admin. Los links tienen que ser `https`.
+- **Sesión:** se cierra sola tras 30 minutos sin uso (control del navegador). La página no se deja abrir dentro de otro sitio y no carga fuentes ni scripts de terceros.
+- **Correo:** el servicio de correo por defecto de Supabase no entrega a direcciones fuera del equipo de la organización; para invitaciones y recuperación de clave hace falta un SMTP propio.
+- Antes de aplicar `20261007000000_seguridad.sql`, cada admin tiene que haber activado el segundo factor desde la página.

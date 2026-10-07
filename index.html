@@ -4,16 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://nryjrdzzmtifalpeugeb.supabase.co; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://nryjrdzzmtifalpeugeb.supabase.co; base-uri 'none'; form-action 'self'">
 <meta name="referrer" content="no-referrer">
 <title>Portal CE</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-<div id="app"><div class="loading">Cargando…</div></div>
-<div class="toast" id="toast" hidden></div>
+<div id="app"><div class="loading" role="status">Cargando…</div></div>
+<div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true" hidden></div>
+<noscript><p style="padding:24px">El Portal CE necesita JavaScript activado.</p></noscript>
 <script src="vendor/supabase.js"></script>
 <script src="js/config.js"></script>
 <script src="js/app.js"></script>

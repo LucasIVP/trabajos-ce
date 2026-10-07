@@ -5,7 +5,8 @@
   --primary:#2F5A8C; --on-primary:#FFFFFF; --tint:#E1EAF4; --tint-ink:#223F61; --today:#E8F0FA;
   --alta:#B03A3A; --alta-bg:#F8E4E4; --media:#8F5E0E; --media-bg:#FBEFD6; --baja:#2F7553; --baja-bg:#E0F1E8;
   --row:#F7F9FB;
-  --display:'Archivo',system-ui,sans-serif; --body:'Public Sans',system-ui,-apple-system,'Segoe UI',sans-serif; --mono:'IBM Plex Mono',ui-monospace,Consolas,monospace;
+  /* Fuentes del sistema: no se cargan fuentes de terceros (Google Fonts registraba la IP de cada visita). Calibri como en los informes del CE. */
+  --display:Calibri,Carlito,'Segoe UI',system-ui,-apple-system,sans-serif; --body:Calibri,Carlito,'Segoe UI',system-ui,-apple-system,sans-serif; --mono:ui-monospace,Consolas,'Cascadia Mono',Menlo,monospace;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#0E1620; --surface:#16212D; --ink:#E5EBF2; --muted:#9AA8B8; --line:#2A3847;
@@ -16,7 +17,7 @@
   --primary:#8DB2E2; --on-primary:#0E1620; --tint:#213349; --tint-ink:#C3D5EC; --today:#1B2B3F;
   --alta:#F0A0A0; --alta-bg:#44222A; --media:#E8BA6B; --media-bg:#3B2D14; --baja:#74CDA1; --baja-bg:#173A2B; --row:#19262F; color-scheme:dark}
 *{box-sizing:border-box}
-body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:14px;line-height:1.45}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:14.5px;line-height:1.45;margin:0;overflow-wrap:break-word}
 button,input,select,textarea{font:inherit;color:inherit}
 h1,h2,h3{font-family:var(--display);margin:0;text-wrap:balance}
 h1{font-size:clamp(22px,3vw,28px);font-weight:700;color:var(--primary)}
@@ -108,7 +109,7 @@ td.code{font-family:var(--mono);font-size:12.5px;color:var(--primary);white-spac
 .nv .dt{text-align:center;font-family:var(--mono);line-height:1.15}
 .nv .dt b{display:block;font-size:19px;font-weight:500}
 .nv .dt span{font-size:11px;color:var(--muted);text-transform:uppercase}
-.nv p{margin:0 0 4px}
+.nv p{margin:0 0 4px;overflow-wrap:anywhere}
 .form{display:grid;gap:10px}
 .form .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 .form label{display:grid;gap:4px;font-size:12.5px;color:var(--muted)}
@@ -150,3 +151,17 @@ a.lnk:hover{border-color:var(--primary)}
 .loading{padding:40px;text-align:center;color:var(--muted)}
 .btn[disabled]{opacity:.55;cursor:not-allowed}
 .setup{max-width:560px;margin:40px auto;padding:22px}
+
+/* Seguridad y estados (auditoría 07/10) */
+.wrapw{overflow-wrap:anywhere}
+.login h1.mark{margin:0}
+.banner{background:var(--media-bg);color:var(--media);border-radius:8px;padding:10px 14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.kv{margin:0;display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 14px}
+.kv dt{color:var(--muted)} .kv dd{margin:0;overflow-wrap:anywhere}
+.steps{margin:0 0 14px;padding-left:20px;display:grid;gap:10px}
+.qr{margin:10px 0;background:#fff;padding:10px;border-radius:8px;width:max-content;max-width:100%}
+.qr img{display:block;max-width:100%;height:auto}
+.secret{word-break:break-all;user-select:all}
+.btn[aria-busy="true"]{cursor:progress}
+/* En pantallas táctiles, botones y filtros más grandes para el dedo */
+@media (pointer:coarse){.btn.ghost{padding:7px 12px;font-size:13.5px} .chip{padding:7px 13px;font-size:13.5px} .nav button,.tabs button{padding:11px 12px}}

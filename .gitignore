@@ -5,3 +5,12 @@
 node_modules/
 .DS_Store
 supabase/.temp/
+
+# Material privado del espacio de trabajo: nunca al repo público aunque se copie por error acá adentro
+CLAUDE.md
+FUENTES-DE-DATOS.md
+datos/
+referencia/
+Claude outputs/
+*.csv
+.mcp.json
