@@ -41,7 +41,7 @@ if (configured) {
 }
 
 /* Datos cargados desde la base */
-function emptyDB() { return { eventos: [], exp: {}, expList: [], docs: {}, tareas: [], novs: [], recursos: [], members: [], audit: [], errs: [] }; }
+function emptyDB() { return { reservas: [], eventos: [], exp: {}, expList: [], docs: {}, tareas: [], novs: [], recursos: [], members: [], audit: [], errs: [] }; }
 var DB = emptyDB();
 var S = { exp: null, expMode: 'msg', expFilter: 'todo', expQuery: '', reserva: {}, fojas: {}, fojasOK: null, me: null, session: null, noRole: false, setpw: false, loading: true, err: '', dataErr: '', connErr: false, aal: 'aal1', needCode: false, needEnroll: false, factors: [], enroll: null, fresh: false, view: 'inicio', ev: null, tab: 'resumen', f: { est: 'todos', rel: 'todos', g: 'todos' }, tf: 'todas', wk: 0, cal: null };
 
@@ -116,6 +116,9 @@ async function loadAll() {
   DB.novs = q[4].data;
   DB.recursos = q[5].data;
   DB.members = q[6].data;
+  /* Fojas reservadas sin link (para "Requiere atención hoy"). Si la tabla no existe o falla, no frena el resto. */
+  var rf = await sb.from('fojas').select('id,expediente,numero').eq('estado', 'reservada').order('created_at');
+  DB.reservas = rf.error ? [] : rf.data;
   /* Registros de admin: si fallan (por ejemplo, la tabla todavía no existe), no frenan el resto. null = no disponible. */
   DB.audit = []; DB.errs = [];
   if (isAdmin()) {
@@ -298,6 +301,8 @@ function attentionRows() {
   var rows = [];
   if (tk) rows.push({ icon: 'week', title: 'Tareas para hoy', n: tk, detail: tk === 1 ? 'sin completar' : 'sin completar', btn: '<a class="btn sm" href="#semana" data-to="semana">Ver semana</a>' });
   if (sin) rows.push({ icon: 'alert', title: 'Documentos sin Síntesis', n: sin, detail: sin === 1 ? 'recibido, falta la Síntesis' : 'recibidos, falta la Síntesis', btn: '<a class="btn sm" href="#eventos/' + esc(encodeURIComponent(evSin)) + '/docs" data-evgo="' + esc(evSin) + '" data-fest="sin">Ver documentos</a>' });
+  var rv = DB.reservas.length;
+  if (rv) rows.push({ icon: 'folder', title: 'Fojas reservadas sin link', n: rv, detail: rv === 1 ? 'falta subir el archivo o cancelar la reserva' : 'falta subir los archivos o cancelar las reservas', btn: '<a class="btn sm" href="#expedientes/' + esc(encodeURIComponent(DB.reservas[0].expediente)) + '" data-to="expedientes">Ver expediente</a>' });
   if (q) rows.push({ icon: 'clock', title: 'Novedades en espera (Qrx)', n: q, detail: 'esperando respuesta', btn: '<a class="btn sm" href="#novedades" data-to="novedades">Ver novedades</a>' });
   return rows;
 }

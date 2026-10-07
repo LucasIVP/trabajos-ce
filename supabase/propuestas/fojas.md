@@ -1,6 +1,6 @@
 # Propuesta: fojas de expediente (v1, solo link a Drive)
 
-**Estado: propuesta para revisar. No está aplicada.** El SQL está en `fojas.sql`, en esta carpeta, que no es `migrations/`, así que nada lo aplica solo.
+**Estado: aprobada y aplicada el 07/10/2026** como `supabase/migrations/20261007020000_fojas.sql` (probada antes en una transacción descartada). `fojas.sql` conserva la versión comentada, con el sembrado del contador y la prueba de concurrencia.
 
 ## Qué resuelve
 - Una tabla `fojas` ligada al expediente, con número, descripción, tipo, link, estado (`reservada`, `vigente`, `anulada`), "reemplaza a", autor y fechas.
