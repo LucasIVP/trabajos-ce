@@ -14,3 +14,7 @@ referencia/
 Claude outputs/
 *.csv
 .mcp.json
+
+# Capturas de las pruebas de interfaz (nunca al repo)
+capturas/
+.playwright-cli/
