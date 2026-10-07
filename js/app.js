@@ -153,8 +153,20 @@ async function boot(session) {
 }
 async function rebootNow() { var s = await sb.auth.getSession(); await boot(s.data.session); }
 async function reload() { try { await loadAll(); } catch (e) { toast('No se pudo actualizar la lista.'); } render(); }
+/* Traduce el error de la base a un mensaje en español con el paso siguiente. El detalle técnico va solo al registro de errores. */
+function errMsg(err) {
+  var c = (err && err.code) || '', m = (err && err.message) || '';
+  if (c === 'P0001') return m; /* mensajes propios de la base, ya en español (p. ej. "No podés cambiar tu propio rol") */
+  if (c === '42501' || /row-level security|permission denied/i.test(m)) return 'Tu rol no permite este cambio. Si hace falta, pedíselo a quien administra.';
+  if (c === '23514') return 'Algún dato no es válido (por ejemplo, un link que no empieza con https o un texto demasiado largo). Revisalo y probá de nuevo.';
+  if (c === '23505') return 'Ya existe un registro con esos datos.';
+  if (c === '23503') return 'El expediente o evento elegido ya no existe. Recargá la página y probá de nuevo.';
+  if (c === '23502') return 'Falta completar un dato obligatorio.';
+  if (!c || /fetch|network|Failed/i.test(m)) return 'No se pudo conectar. Revisá la conexión y probá de nuevo.';
+  return 'Probá de nuevo; si se repite, avisale a quien administra.';
+}
 function saveFail(r, que) {
-  toast('No se pudo ' + (que || 'guardar') + ': ' + r.error.message);
+  toast('No se pudo ' + (que || 'guardar') + '. ' + errMsg(r.error));
   report((que || 'guardar') + ': ' + (r.error.code || '') + ' ' + r.error.message, true);
 }
 async function run(promise, okMsg) {
@@ -226,7 +238,7 @@ function taskHTML(t) {
   return '<div class="tk ' + p + (t.estado === 'Completadas' ? ' done' : '') + '"><div class="t">' + esc(t.titulo) + '</div><div class="m">' + (t.ad ? '<span class="mono">#' + esc(t.ad) + '</span>' : '<span>Sin expediente</span>') +
     (p === 'alta' ? st('warn', 'alert', 'Prioridad alta') : '') +
     (t.estado === 'En Proceso' ? st('neutral', 'clock', 'En proceso') : '') + (t.estado === 'Completadas' ? st('ok', 'check', 'Hecha') : '') +
-    '<button type="button" class="btn sm edit" data-tk="' + esc(t.id) + '">' + nx[0] + '</button>' + delBtn('tareas', t.id, 'la tarea "' + t.titulo + '"') + '</div></div>';
+    '<button type="button" class="btn sm edit" data-tk="' + esc(t.id) + '">' + nx[0] + '</button>' + delBtn('tareas', t.id, 'la tarea “' + t.titulo + '”') + '</div></div>';
 }
 function novHTML(n) {
   var i = DB.novs.indexOf(n);
@@ -254,6 +266,9 @@ function themeNow() { return themePref() || (window.matchMedia('(prefers-color-s
 function applyTheme(t) {
   try { if (t) localStorage.setItem(THEME_KEY, t); else localStorage.removeItem(THEME_KEY); } catch (e) { }
   if (t) document.documentElement.setAttribute('data-theme', t); else document.documentElement.removeAttribute('data-theme');
+  /* Con tema elegido a mano, las dos etiquetas theme-color toman ese color; en automático, cada una el suyo. */
+  var tc = document.querySelectorAll('meta[name="theme-color"]');
+  tc.forEach(function (m) { var dark = t ? t === 'dark' : /dark/.test(m.getAttribute('media') || ''); m.setAttribute('content', dark ? '#172033' : '#F9FAF7'); });
 }
 applyTheme(themePref());
 function themeBtn() {
@@ -311,7 +326,7 @@ function vSemana() {
   }).join('');
   var sin = DB.tareas.filter(function (t) { return !t.dia; }), end = addD(base, 6);
   var form = '<section class="panel edit" aria-labelledby="h-nt"><header><h2 id="h-nt">Nueva tarea</h2><span class="note">Se guarda para todo el equipo</span></header><div class="body form">' +
-    '<label for="tn">Tarea<input id="tn" type="text" maxlength="300" placeholder="Qué hay que hacer"></label>' +
+    '<label for="tn">Tarea<input id="tn" type="text" maxlength="300" autocomplete="off" placeholder="Qué hay que hacer…"></label>' +
     '<div class="row"><label for="tad">Expediente<select id="tad"><option value="">Sin expediente</option>' + expOptions() + '</select></label>' +
     '<label for="td">Día<input id="td" type="date" value="' + ds(T0) + '"></label>' +
     '<label for="tp">Prioridad<select id="tp"><option value="alta">Alta</option><option value="media" selected>Media</option><option value="baja">Baja</option></select></label></div>' +
@@ -357,10 +372,10 @@ function calPanel() {
     ? '<div class="chips">' + REMALL.map(function (r) { return '<button class="chip" type="button" data-cal="rem" data-m="' + r[0] + '" aria-pressed="' + (c.rem.indexOf(r[0]) > -1) + '">' + r[1] + '</button>'; }).join('') + '</div>'
     : '<div class="chips">' + c.rem.map(function (m) { return st('neutral', 'clock', remLabel(m) + ' antes'); }).join('') + '<span class="note">Avisos fijos de este tipo</span></div>';
   var form = '<div class="form"><div class="note">Tipo de evento</div>' + types +
-    '<label for="cf-titulo">Título<input id="cf-titulo" type="text" data-cf="titulo" value="' + esc(c.titulo) + '"></label>' +
+    '<label for="cf-titulo">Título<input id="cf-titulo" type="text" data-cf="titulo" autocomplete="off" value="' + esc(c.titulo) + '"></label>' +
     '<div class="row"><label for="cf-fecha">Fecha<input id="cf-fecha" type="date" data-cf="fecha" value="' + esc(c.fecha) + '"></label>' +
     (c.tipo === 'fecha' ? '' : '<label for="cf-hora">Hora (Argentina)<input id="cf-hora" type="time" data-cf="hora" value="' + esc(c.hora) + '"></label><label for="cf-dur">Duración<select id="cf-dur" data-cf="dur">' + [30, 60, 90, 120, 480].map(function (m) { return '<option value="' + m + '"' + (c.dur === m ? ' selected' : '') + '>' + (m < 60 ? m + ' min' : m / 60 + ' h') + '</option>'; }).join('') + '</select></label>') + '</div>' +
-    (c.tipo === 'fecha' ? '' : '<label for="cf-link">Link de la videollamada (opcional)<input id="cf-link" type="text" data-cf="link" placeholder="Pegar el link oficial. Si queda vacío, no se agrega ninguno." value="' + esc(c.link) + '"></label>') +
+    (c.tipo === 'fecha' ? '' : '<label for="cf-link">Link de la videollamada (opcional)<input id="cf-link" type="text" data-cf="link" autocomplete="off" spellcheck="false" placeholder="Pegar el link oficial… Si queda vacío, no se agrega ninguno" value="' + esc(c.link) + '"></label>') +
     '<fieldset class="plain"><legend class="note">Invitar a</legend><div class="checks">' + invList().map(function (i) { return '<label><input type="checkbox" data-ci="' + esc(i[0]) + '"' + (c.inv[i[0]] ? ' checked' : '') + '> ' + esc(i[1]) + '</label>'; }).join('') + '</div></fieldset>' +
     '<div><div class="note">Avisos</div>' + rem + '</div></div>';
   return '<section class="panel cal edit">' + head + '<div class="body cal-grid"><div>' + form + '</div><div class="stack"><div id="calprev">' + calPrev() + '</div><div><button class="btn primary" type="button" disabled>Crear evento y enviar invitaciones</button><p class="note">Todavía no crea nada en Google Calendar. Hasta entonces, cargá el evento a mano con estos datos.</p></div></div></div></section>';
@@ -369,9 +384,9 @@ function vNov() {
   var g = {}, order = [];
   DB.novs.forEach(function (n) { if (!g[n.ad]) { g[n.ad] = []; order.push(n.ad); } g[n.ad].push(n); });
   var form = '<section class="panel edit" aria-labelledby="h-cn"><header><h2 id="h-cn">Cargar novedad</h2><span class="note">Se guarda para todo el equipo</span></header><div class="body form">' +
-    '<label for="nt">Novedad<textarea id="nt" maxlength="2000" placeholder="Qué pasó. Ej.: Se envió la confirmación de preferencia."></textarea></label>' +
+    '<label for="nt">Novedad<textarea id="nt" maxlength="2000" autocomplete="off" placeholder="Qué pasó… Ej.: se envió la confirmación de preferencia"></textarea></label>' +
     '<div class="row"><label for="nad">Expediente<select id="nad">' + expOptions() + '</select></label>' +
-    '<label for="nf">Fecha<input id="nf" type="date" value="' + ds(T0) + '"></label><label for="ni">Iniciales<input id="ni" type="text" value="' + esc(S.me.iniciales) + '" maxlength="6"></label></div>' +
+    '<label for="nf">Fecha<input id="nf" type="date" value="' + ds(T0) + '"></label><label for="ni">Iniciales<input id="ni" type="text" value="' + esc(S.me.iniciales) + '" maxlength="6" autocomplete="off" spellcheck="false" autocapitalize="characters"></label></div>' +
     '<div class="chips"><label class="check"><input type="checkbox" id="nq"> Queda en espera (Qrx)</label><label class="check"><input type="checkbox" id="ntk"> Crear también una tarea</label></div>' +
     '<div><button class="btn primary" type="button" data-act="addnov">Guardar novedad</button></div></div></section>';
   return '<div class="head"><div><h1>Novedades</h1><p>Novedades por expediente, de la más reciente a la más antigua.</p></div><div class="chips"><button class="btn edit" type="button" data-cal="new">Preparar evento de Calendar</button></div></div>' + calPanel() + form +
@@ -436,11 +451,11 @@ function vEventos() {
     body = ns.length ? '<section class="panel"><div class="body">' + ns.map(novHTML).join('') + '</div></section>' : empty('Todavía no hay novedades de este evento.');
   } else {
     var rs = DB.recursos.filter(function (r) { return r.evento_id === e.id; });
-    body = rs.length ? '<section class="panel rows">' + rs.map(function (r) { var u = safeUrl(r.url); return '<div class="res-row"><h3>' + esc(r.titulo) + '</h3><p class="note">Link a Drive. Quien no tiene permiso en Drive no puede abrirlo.</p><div class="chips">' + (u ? '<a class="btn sm" href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + ic('file', true) + 'Abrir en Drive</a>' : '<span class="muted">Sin link</span>') + delBtn('recursos', r.id, 'el recurso "' + r.titulo + '"') + '</div></div>'; }).join('') + '</section>' : empty('Todavía no hay recursos cargados para este evento.');
+    body = rs.length ? '<section class="panel rows">' + rs.map(function (r) { var u = safeUrl(r.url); return '<div class="res-row"><h3>' + esc(r.titulo) + '</h3><p class="note">Link a Drive. Quien no tiene permiso en Drive no puede abrirlo.</p><div class="chips">' + (u ? '<a class="btn sm" href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + ic('file', true) + 'Abrir en Drive</a>' : '<span class="muted">Sin link</span>') + delBtn('recursos', r.id, 'el recurso “' + r.titulo + '”') + '</div></div>'; }).join('') + '</section>' : empty('Todavía no hay recursos cargados para este evento.');
   }
   return '<div class="head"><div><h1>Eventos</h1><p>Cada evento reúne sus documentos, tareas, novedades y recursos.</p></div></div>' +
     '<div class="ev-layout"><div class="ev-list" role="group" aria-label="Eventos">' + DB.eventos.map(function (x) { return '<button type="button" data-ev="' + esc(x.id) + '"' + (x.id === S.ev ? ' aria-current="true"' : '') + '><b>' + esc(x.n) + '</b><span class="mono">' + range(x) + '</span></button>'; }).join('') + '</div>' +
-    '<div class="stack"><div class="evhead"><h2>' + esc(e.n) + '</h2><div class="meta"><span>' + esc(e.lugar) + '</span><span class="mono">' + range(e) + '</span>' + st('neutral', 'minus', esc(e.st)) + delBtn('eventos', e.id, 'el evento "' + e.n + '" junto con sus ' + list.length + ' documentos y sus recursos') + '</div></div>' + tb + '<div id="tabpanel" role="tabpanel" aria-labelledby="tab-' + S.tab + '" class="stack">' + body + '</div></div></div>';
+    '<div class="stack"><div class="evhead"><h2>' + esc(e.n) + '</h2><div class="meta"><span>' + esc(e.lugar) + '</span><span class="mono">' + range(e) + '</span>' + st('neutral', 'minus', esc(e.st)) + delBtn('eventos', e.id, 'el evento “' + e.n + '” junto con sus ' + list.length + ' documentos y sus recursos') + '</div></div>' + tb + '<div id="tabpanel" role="tabpanel" aria-labelledby="tab-' + S.tab + '" class="stack">' + body + '</div></div></div>';
 }
 /* Resumen de una fila de auditoría: qué fila y qué columnas cambiaron. */
 var OPS = { INSERT: 'Alta', UPDATE: 'Cambio', DELETE: 'Borrado' };
@@ -462,9 +477,9 @@ function vMiembros() {
       return '<div class="mrow"><div class="who2"><b>' + esc(m.nombre || '—') + '</b>' + (self ? ' <span class="note">(vos)</span>' : '') + '</div><div class="mono wrapw">' + esc(m.email) + '</div><div>' + sel + '</div><div class="mono">' + esc(m.iniciales || '—') + '</div></div>';
     }).join('') + '</section>' +
     '<section class="panel" aria-labelledby="h-inv"><header><h2 id="h-inv">Invitar a una persona</h2></header><div class="body stack"><form class="form" id="invf">' +
-    '<div class="row"><label for="ie">Correo<input id="ie" type="email" placeholder="nombre@ejemplo.com" maxlength="254" required></label>' +
-    '<label for="in">Nombre<input id="in" type="text" maxlength="120"></label>' +
-    '<label for="ii">Iniciales<input id="ii" type="text" maxlength="8"></label>' +
+    '<div class="row"><label for="ie">Correo<input id="ie" type="email" name="invitado" placeholder="nombre@ejemplo.com" maxlength="254" autocomplete="off" spellcheck="false" autocapitalize="off" required></label>' +
+    '<label for="in">Nombre<input id="in" type="text" maxlength="120" autocomplete="off"></label>' +
+    '<label for="ii">Iniciales<input id="ii" type="text" maxlength="8" autocomplete="off" spellcheck="false" autocapitalize="characters"></label>' +
     '<label for="ir">Rol<select id="ir"><option value="">Sin rol (lo asignás después)</option>' + Object.keys(ROLES).map(function (k) { return '<option value="' + k + '">' + ROLES[k] + '</option>'; }).join('') + '</select></label></div>' +
     '<div><button class="btn primary" type="submit">Enviar invitación</button></div></form>' +
     '<p class="note">La persona recibe un correo para crear su clave y configurar el segundo factor. Para dar de baja a alguien, borrarlo desde el panel de Supabase: Authentication, Users.</p></div></section>' +
@@ -479,7 +494,7 @@ function enrollHTML() {
       '<li>En la app, agregá una cuenta escaneando este código:' + (S.enroll.qr ? '<div class="qr"><img src="' + esc(S.enroll.qr) + '" alt="Código QR para agregar el Portal CE a la app de códigos" width="180" height="180"></div>' : '') +
       '<div class="note">Si no podés escanearlo, cargá esta clave a mano: <span class="mono secret">' + esc(S.enroll.secret) + '</span></div></li>' +
       '<li>Escribí el código de 6 números que muestra la app.</li></ol>' +
-      '<form class="form" id="enrf"><label for="ec">Código de la app<input id="ec" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label>' +
+      '<form class="form" id="enrf"><label for="ec">Código de la app<input id="ec" type="text" inputmode="numeric" autocomplete="one-time-code" spellcheck="false" pattern="[0-9]{6}" maxlength="6" required></label>' +
       '<div class="chips"><button class="btn primary" type="submit">Confirmar y activar</button><button class="btn" type="button" data-act="mfa-cancel">Cancelar</button></div></form>';
 }
 function authWrap(inner, wide) { return '<main class="wrap"><div class="authtop">' + themeBtn() + '</div>' + inner + '</main>'; }
@@ -511,8 +526,8 @@ function vSetup() {
 function vLogin() {
   return authWrap('<form class="panel auth form" id="lf"><h1 class="mark">Portal CE</h1><p class="muted">Ingresá con la cuenta que te dio el equipo.</p>' +
     (S.err ? '<div class="err" role="alert">' + esc(S.err) + '</div>' : '') +
-    '<label for="lm">Correo<input id="lm" type="email" placeholder="nombre@ejemplo.com" autocomplete="username" required></label>' +
-    '<label for="lp">Clave<input id="lp" type="password" placeholder="••••••••" autocomplete="current-password" required></label>' +
+    '<label for="lm">Correo<input id="lm" type="email" name="email" placeholder="nombre@ejemplo.com" autocomplete="username" spellcheck="false" autocapitalize="off" required></label>' +
+    '<label for="lp">Clave<input id="lp" type="password" name="password" autocomplete="current-password" required></label>' +
     '<button class="btn primary" type="submit">Ingresar</button>' +
     '<button class="btn" type="button" data-act="forgot">Olvidé mi clave</button>' +
     '<p class="note">¿No tenés cuenta? Pedísela a quien administra el portal. No hay registro abierto.</p></form>');
@@ -530,6 +545,19 @@ function pwMissing(p) { return PW_REQ.filter(function (r) { return !r[2](p); }).
 function pwReqHTML(p) {
   return PW_REQ.map(function (r) { var ok = r[2](p || ''); return '<li class="' + (ok ? 'ok' : '') + '"><span aria-hidden="true">' + (ok ? '✓' : '○') + '</span> ' + r[1] + '<span class="sr-only">' + (ok ? ': cumplido' : ': falta') + '</span></li>'; }).join('');
 }
+/* Error de validación junto al campo: mensaje debajo, aria-invalid y foco en el campo. */
+function fieldErr(id, msg) {
+  var el = $('#' + id); if (!el) { toast(msg); return; }
+  var e = document.getElementById(id + '-err');
+  if (!e) { e = document.createElement('p'); e.id = id + '-err'; e.className = 'ferr'; e.setAttribute('role', 'alert'); (el.closest('label') || el).after(e); }
+  e.textContent = msg; e.hidden = false;
+  el.setAttribute('aria-invalid', 'true'); el.setAttribute('aria-describedby', e.id); el.focus();
+}
+function clearFieldErr(el) {
+  if (el.getAttribute('aria-invalid') !== 'true') return;
+  el.removeAttribute('aria-invalid'); el.removeAttribute('aria-describedby');
+  var e = document.getElementById(el.id + '-err'); if (e) e.hidden = true;
+}
 function pwErr(msg) { var e = $('#pwerr'); if (e) { e.textContent = msg; e.hidden = !msg; } }
 function vSetPw() {
   return authWrap('<form class="panel auth form" id="pwf" novalidate><h1 class="mark">Portal CE</h1><p class="muted">Elegí tu clave para entrar al portal.</p>' +
@@ -542,7 +570,7 @@ function vSetPw() {
 function vMfaCode() {
   return authWrap('<form class="panel auth form" id="mfaf"><h1 class="mark">Portal CE</h1><p class="muted">Escribí el código de 6 números que muestra la app de tu celular.</p>' +
     (S.err ? '<div class="err" role="alert">' + esc(S.err) + '</div>' : '') +
-    '<label for="mc">Código<input id="mc" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label>' +
+    '<label for="mc">Código<input id="mc" type="text" inputmode="numeric" autocomplete="one-time-code" spellcheck="false" pattern="[0-9]{6}" maxlength="6" required></label>' +
     '<button class="btn primary" type="submit">Verificar</button>' +
     '<button class="btn" type="button" data-act="logout">Salir</button>' +
     '<p class="note">¿Perdiste el celular? Pedile a quien administra que quite tu segundo factor desde el panel de Supabase.</p></form>');
@@ -560,7 +588,7 @@ function frame() {
   var u = S.me;
   var main = S.dataErr ? errorBox(S.dataErr) : V[S.view]();
   var curBottom = S.view === 'miembros' ? 'cuenta' : S.view;
-  return '<header class="bar"><div class="bar-in"><span class="brand">Portal CE <small>Comité Ejecutivo</small></span>' +
+  return '<a class="skip" href="#view">Ir al contenido</a><header class="bar"><div class="bar-in"><span class="brand">Portal CE <small>Comité Ejecutivo</small></span>' +
     '<nav class="nav-top" aria-label="Secciones">' + NAV.map(function (n) { return '<button type="button" class="' + (n[2] || '') + '" data-v="' + n[0] + '" data-nav="top"' + (S.view === n[0] ? ' aria-current="page"' : '') + '>' + n[1] + '</button>'; }).join('') + '</nav>' +
     '<div class="who"><span class="who-name">' + esc(u.nombre || u.email) + ' <span class="muted">· ' + esc(ROLES[u.rol] || '') + '</span></span>' + themeBtn() +
     '<button class="iconbtn" type="button" data-act="logout">' + ic('out') + '<span class="lbl">Salir</span></button></div></div></header>' +
@@ -575,10 +603,34 @@ function focusSel(el) {
   if (!a.length) return null;
   return el.tagName.toLowerCase() + a.map(function (x) { return '[' + x.name + '="' + CSS.escape(x.value) + '"]'; }).join('');
 }
+/* Borradores: lo escrito en un formulario sobrevive al redibujado y al cambio de sección.
+   Solo en memoria (nunca en localStorage); se borra al guardar y al salir. Las claves no se guardan nunca. */
+var DRAFTS = {};
+function fieldDefault(el) {
+  if (el.type === 'checkbox') return el.defaultChecked;
+  if (el.tagName === 'SELECT') { var o = [].filter.call(el.options, function (x) { return x.defaultSelected; })[0] || el.options[0]; return o ? o.value : ''; }
+  return el.defaultValue;
+}
+function fieldValue(el) { return el.type === 'checkbox' ? el.checked : el.value; }
+function setField(el, v) { if (el.type === 'checkbox') el.checked = v; else el.value = v; }
+function saveDrafts(root) {
+  root.querySelectorAll('input[id], textarea[id], select[id]').forEach(function (el) {
+    if (el.type === 'password' || el.dataset.cf || el.dataset.ci || el.dataset.rol || el.disabled) return;
+    if (fieldValue(el) !== fieldDefault(el)) DRAFTS[el.id] = fieldValue(el); else delete DRAFTS[el.id];
+  });
+}
+function restoreDrafts(root) {
+  Object.keys(DRAFTS).forEach(function (id) { var el = root.querySelector('#' + CSS.escape(id)); if (el && !el.disabled) setField(el, DRAFTS[id]); });
+}
+function clearDrafts(ids) { ids.forEach(function (id) { delete DRAFTS[id]; var el = $('#' + id); if (el) setField(el, fieldDefault(el)); }); }
+function hasDraftText() { saveDrafts($('#app')); return Object.keys(DRAFTS).some(function (k) { return typeof DRAFTS[k] === 'string' && DRAFTS[k].trim() !== ''; }); }
+window.addEventListener('beforeunload', function (e) { if (S.session && hasDraftText()) { e.preventDefault(); e.returnValue = ''; } });
 function paint(html) {
   var app = $('#app'), sel = focusSel(document.activeElement);
+  saveDrafts(app);
   app.innerHTML = html;
   hydrate(app);
+  restoreDrafts(app);
   if (sel) { var n = app.querySelector(sel); if (n) n.focus({ preventScroll: true }); }
 }
 function loadingView() { return '<div class="state" role="status">Cargando…</div>'; }
@@ -604,6 +656,11 @@ function go(v) {
   render(); window.scrollTo(0, 0);
 }
 window.addEventListener('popstate', function () { var h = location.hash.slice(1); if (hasView(h) && S.me) { S.view = h; render(); } });
+/* Salto al contenido: lleva el foco al área principal sin cambiar la dirección. */
+document.addEventListener('click', function (e) {
+  var a = e.target.closest('a.skip'); if (!a) return;
+  e.preventDefault(); var v = $('#view'); if (v) { v.setAttribute('tabindex', '-1'); v.focus(); }
+});
 /* Tema: botón de la barra y opciones de Mi cuenta (solo interfaz, no toca datos). */
 document.addEventListener('click', function (e) {
   var b = e.target.closest('[data-theme-set]'); if (!b) return;
@@ -650,23 +707,23 @@ document.addEventListener('click', async function (e) {
   if (d.cal) { calAct(b); }
 });
 async function act(a) {
-  if (a === 'logout') { clearAct(); S.err = ''; await sb.auth.signOut(); return; }
+  if (a === 'logout') { clearAct(); S.err = ''; DRAFTS = {}; await sb.auth.signOut(); return; }
   if (a === 'retry') { await boot(S.session); return; }
   if (a === 'forgot') {
     var em = ($('#lm') || {}).value;
-    if (!em) { toast('Escribí tu correo y volvé a tocar el botón'); return; }
+    if (!em) { fieldErr('lm', 'Escribí tu correo y volvé a tocar «Olvidé mi clave».'); return; }
     await sb.auth.resetPasswordForEmail(em.trim(), { redirectTo: location.origin + location.pathname });
     toast('Si el correo tiene cuenta, te llegará un enlace para elegir una clave nueva.');
     return;
   }
   if (a === 'addtask') {
-    var n = $('#tn').value.trim(); if (!n) { toast('Escribí qué hay que hacer'); return; }
-    await run(sb.from('tareas').insert({ titulo: n, dia: $('#td').value || null, ad: $('#tad').value || null, prioridad: $('#tp').value }), 'Tarea agregada');
+    var n = $('#tn').value.trim(); if (!n) { fieldErr('tn', 'Escribí qué hay que hacer.'); return; }
+    if (await run(sb.from('tareas').insert({ titulo: n, dia: $('#td').value || null, ad: $('#tad').value || null, prioridad: $('#tp').value }), 'Tarea agregada')) clearDrafts(['tn', 'tad', 'td', 'tp']);
     return;
   }
   if (a === 'addnov') {
-    var t = $('#nt').value.trim(); if (!t) { toast('Escribí la novedad'); return; }
-    var ad = $('#nad').value; if (!ad) { toast('Elegí un expediente'); return; }
+    var t = $('#nt').value.trim(); if (!t) { fieldErr('nt', 'Escribí la novedad.'); return; }
+    var ad = $('#nad').value; if (!ad) { fieldErr('nad', 'Elegí un expediente.'); return; }
     var f = $('#nf').value || ds(T0), withTask = $('#ntk') && $('#ntk').checked;
     var r1 = await sb.from('novedades').insert({ texto: t, ad: ad, fecha: f, autor: $('#ni').value || S.me.iniciales, qrx: $('#nq').checked });
     if (r1.error) { saveFail(r1); return; }
@@ -675,6 +732,7 @@ async function act(a) {
       if (r2.error) { saveFail(r2, 'crear la tarea'); await reload(); return; }
     }
     toast(withTask ? 'Novedad y tarea guardadas' : 'Novedad guardada');
+    clearDrafts(['nt', 'nad', 'nf', 'ni', 'nq', 'ntk']);
     await reload();
     return;
   }
@@ -684,7 +742,7 @@ async function act(a) {
     var pend = ((l.data && l.data.all) || []).filter(function (x) { return x.factor_type === 'totp' && x.status !== 'verified'; });
     for (var i = 0; i < pend.length; i++) { await sb.auth.mfa.unenroll({ factorId: pend[i].id }); }
     var en = await sb.auth.mfa.enroll({ factorType: 'totp', friendlyName: 'Portal CE ' + ds(new Date()) + ' ' + Date.now() % 10000 });
-    if (en.error) { toast('No se pudo empezar: ' + en.error.message); report('mfa enroll: ' + en.error.message, true); return; }
+    if (en.error) { toast('No se pudo empezar. Probá de nuevo en un momento.'); report('mfa enroll: ' + en.error.message, true); return; }
     var qr = String(en.data.totp.qr_code || '');
     S.enroll = { id: en.data.id, qr: /^data:image\/svg\+xml/.test(qr) ? qr : '', secret: en.data.totp.secret };
     render();
@@ -698,7 +756,7 @@ async function act(a) {
   if (a === 'mfa-off') {
     if (!S.factors.length || !confirm('¿Cambiar de celular?\n\nSe borra el código actual y, antes de seguir usando el portal, vas a configurar el celular nuevo.')) return;
     var un = await sb.auth.mfa.unenroll({ factorId: S.factors[0].id });
-    if (un.error) { toast('No se pudo quitar: ' + un.error.message); return; }
+    if (un.error) { toast('No se pudo quitar. Salí, volvé a ingresar con el código y probá de nuevo.'); report('mfa unenroll: ' + un.error.message, true); return; }
     await sb.auth.refreshSession();
     toast('Configurá el celular nuevo');
     await rebootNow();
@@ -790,12 +848,14 @@ document.addEventListener('submit', async function (e) {
         toast(msg); return;
       }
       toast('Invitación enviada a ' + body.email);
+      clearDrafts(['ie', 'in', 'ii', 'ir']);
       var y3 = window.scrollY; await reload(); window.scrollTo(0, y3);
     }, 'Enviando…');
   }
 });
 document.addEventListener('input', function (e) {
   var t = e.target;
+  clearFieldErr(t);
   if (t.id === 'np') { var l = $('#pwreq'); if (l) l.innerHTML = pwReqHTML(t.value); return; }
   if (!S.cal) return;
   if (t.dataset.cf) { S.cal[t.dataset.cf] = t.dataset.cf === 'dur' ? +t.value : t.value; var p = document.getElementById('calprev'); if (p) p.innerHTML = calPrev(); }
@@ -813,7 +873,7 @@ document.addEventListener('change', async function (e) {
 /* ---------- arranque ---------- */
 if (configured) {
   sb.auth.onAuthStateChange(function (event, session) {
-    if (event === 'SIGNED_OUT') { S.session = null; S.me = null; S.setpw = false; S.needCode = false; S.needEnroll = false; S.enroll = null; S.loading = false; S.aal = 'aal1'; DB = emptyDB(); render(); return; }
+    if (event === 'SIGNED_OUT') { DRAFTS = {}; S.session = null; S.me = null; S.setpw = false; S.needCode = false; S.needEnroll = false; S.enroll = null; S.loading = false; S.aal = 'aal1'; DB = emptyDB(); render(); return; }
     /* Sesión guardada de hace más de 30 minutos sin uso: no se retoma. */
     if (session && !S.fresh && stale()) { setTimeout(idleLogout, 0); return; }
     if (S.fresh && session) { S.fresh = false; touch(); }
