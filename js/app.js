@@ -293,9 +293,9 @@ function attentionRows() {
   var evSin = Object.keys(sinEv)[0];
   var q = DB.novs.filter(function (n) { return n.qrx; }).length;
   var rows = [];
-  if (tk) rows.push({ icon: 'week', title: 'Tareas para hoy', n: tk, detail: tk === 1 ? 'sin completar' : 'sin completar', btn: '<button class="btn sm" type="button" data-v="semana">Ver semana</button>' });
-  if (sin) rows.push({ icon: 'alert', title: 'Documentos sin Síntesis', n: sin, detail: sin === 1 ? 'recibido, falta la Síntesis' : 'recibidos, falta la Síntesis', btn: '<button class="btn sm" type="button" data-ev="' + esc(evSin) + '" data-go="docs" data-fest="sin">Ver documentos</button>' });
-  if (q) rows.push({ icon: 'clock', title: 'Novedades en espera (Qrx)', n: q, detail: 'esperando respuesta', btn: '<button class="btn sm" type="button" data-v="novedades">Ver novedades</button>' });
+  if (tk) rows.push({ icon: 'week', title: 'Tareas para hoy', n: tk, detail: tk === 1 ? 'sin completar' : 'sin completar', btn: '<a class="btn sm" href="#semana" data-to="semana">Ver semana</a>' });
+  if (sin) rows.push({ icon: 'alert', title: 'Documentos sin Síntesis', n: sin, detail: sin === 1 ? 'recibido, falta la Síntesis' : 'recibidos, falta la Síntesis', btn: '<a class="btn sm" href="#eventos/' + esc(encodeURIComponent(evSin)) + '/docs" data-evgo="' + esc(evSin) + '" data-fest="sin">Ver documentos</a>' });
+  if (q) rows.push({ icon: 'clock', title: 'Novedades en espera (Qrx)', n: q, detail: 'esperando respuesta', btn: '<a class="btn sm" href="#novedades" data-to="novedades">Ver novedades</a>' });
   return rows;
 }
 function attention(rows) {
@@ -319,7 +319,7 @@ function activeEvent(cur) {
     '<div><span class="st st-strong">' + (n > 0 ? 'Próximo evento' : 'En curso') + '</span></div>' +
     '<div class="hero-main">' + (n > 0 ? '<span class="hero-num">' + n + '</span>' : '') + info + '</div>' +
     (cn.t ? heroBar(cn) : '<p class="hero-muted">Todavía no hay documentos cargados para este evento.</p>') +
-    '<div class="chips"><button class="btn" data-ev="' + esc(cur.id) + '" data-go="docs" type="button">Abrir</button><button class="btn ghost" data-v="eventos" type="button">Ver todos</button></div></section>';
+    '<div class="chips"><a class="btn" href="#eventos/' + esc(encodeURIComponent(cur.id)) + '/docs" data-evgo="' + esc(cur.id) + '">Abrir<span class="sr-only"> los documentos de ' + esc(cur.n) + '</span></a><a class="btn ghost" href="#eventos" data-to="eventos">Ver todos<span class="sr-only"> los eventos</span></a></div></section>';
 }
 function vInicio() {
   var next = DB.eventos.filter(function (e) { return days(e.hasta) >= 0; }).sort(function (a, b) { return a.desde < b.desde ? -1 : 1; });
@@ -332,12 +332,12 @@ function vInicio() {
   return '<div class="head hello"><div><p class="kicker">' + DIAS[T0.getDay()] + ' ' + fm(ds(T0)) + '</p><h1>Buen día, ' + esc(name) + '</h1></div>' +
     '<p class="summary">' + (total ? 'Hoy hay <b>' + total + '</b> ' + (total === 1 ? 'pendiente' : 'pendientes') + ' para resolver.' : 'No hay pendientes para hoy.') + '</p></div>' +
     '<div class="grid2">' + activeEvent(next[0]) + attention(rows) + '</div>' +
-    '<div class="grid2"><section class="panel" aria-labelledby="h-wk"><header><h2 id="h-wk">Esta semana, por hacer</h2><button class="btn sm" data-v="semana" type="button">Abrir semana</button></header><div class="body">' +
+    '<div class="grid2"><section class="panel" aria-labelledby="h-wk"><header><h2 id="h-wk">Esta semana, por hacer</h2><a class="btn sm" href="#semana" data-to="semana">Abrir semana</a></header><div class="body">' +
     (wk.length ? wk.map(taskHTML).join('') : emptyIn('No hay tareas pendientes esta semana.')) + '</div></section>' +
     '<div class="stack">' +
     '<section class="panel" aria-labelledby="h-qrx"><header><h2 id="h-qrx">En espera (Qrx)</h2>' + st('warn', 'clock', String(q.length)) + '</header>' +
     (q.length ? '<div class="rows">' + q.map(function (n) { return '<div class="evlist-row"><div><span class="adtag" translate="no">' + esc(n.ad) + '</span> <span class="mono muted">' + fm(n.fecha) + '</span><p class="wrapw">' + esc(n.texto) + '</p></div></div>'; }).join('') + '</div>' : '<div class="body">' + emptyIn('Nada en espera.') + '</div>') + '</section>' +
-    (otros.length ? '<section class="panel" aria-labelledby="h-next"><header><h2 id="h-next">Próximos eventos</h2></header><div class="rows">' + otros.map(function (e) { return '<div class="evlist-row"><div><b>' + esc(e.n) + '</b><p class="note mono">' + range(e) + '</p></div><button class="btn sm" type="button" data-ev="' + esc(e.id) + '">Abrir</button></div>'; }).join('') + '</div></section>' : '') +
+    (otros.length ? '<section class="panel" aria-labelledby="h-next"><header><h2 id="h-next">Próximos eventos</h2></header><div class="rows">' + otros.map(function (e) { return '<div class="evlist-row"><div><b>' + esc(e.n) + '</b><p class="note mono">' + range(e) + '</p></div><a class="btn sm" href="#eventos/' + esc(encodeURIComponent(e.id)) + '/resumen" data-evgo="' + esc(e.id) + '">Abrir<span class="sr-only"> ' + esc(e.n) + '</span></a></div>'; }).join('') + '</div></section>' : '') +
     '</div></div>';
 }
 function vSemana() {
@@ -533,7 +533,7 @@ function vCuenta() {
     '<div><button class="btn" type="button" data-act="mfa-off">Cambiar de celular</button></div><p class="note">Se borra el código actual y, antes de seguir, configurás el celular nuevo.</p>';
   var tema = '<div class="chips" role="group" aria-label="Apariencia">' + [['', 'Automático'], ['light', 'Claro'], ['dark', 'Oscuro']].map(function (o) { return '<button class="chip" type="button" data-theme-set="' + o[0] + '" data-theme-opt="1" aria-pressed="' + (pref === o[0]) + '">' + o[1] + '</button>'; }).join('') + '</div><p class="note">Automático sigue la configuración del dispositivo. Se recuerda solo en este navegador.</p>';
   return '<div class="head"><div><h1>Mi cuenta</h1><p>Tus datos y la seguridad de tu ingreso.</p></div></div>' +
-    (isAdmin() ? '<section class="panel adm"><div class="body evlist-row"><div><h2>Miembros</h2><p class="note">Roles, invitaciones y registros del portal.</p></div><button class="btn primary" type="button" data-v="miembros">Abrir Miembros</button></div></section>' : '') +
+    (isAdmin() ? '<section class="panel adm"><div class="body evlist-row"><div><h2>Miembros</h2><p class="note">Roles, invitaciones y registros del portal.</p></div><a class="btn primary" href="#miembros" data-to="miembros">Abrir Miembros</a></div></section>' : '') +
     '<section class="panel" aria-labelledby="h-dat"><header><h2 id="h-dat">Datos</h2></header><div class="body"><dl class="kv"><dt>Nombre</dt><dd>' + esc(u.nombre || '—') + '</dd><dt>Correo</dt><dd class="mono">' + esc(u.email) + '</dd><dt>Rol</dt><dd>' + esc(ROLES[u.rol] || '—') + '</dd><dt>Iniciales</dt><dd class="mono">' + esc(u.iniciales || '—') + '</dd></dl></div></section>' +
     '<section class="panel" aria-labelledby="h-mfa"><header><h2 id="h-mfa">Segundo factor (código en el celular)</h2></header><div class="body stack">' + mfa + '</div></section>' +
     '<section class="panel" aria-labelledby="h-tema"><header><h2 id="h-tema">Apariencia</h2></header><div class="body stack">' + tema + '</div></section>' +
@@ -703,6 +703,11 @@ window.addEventListener('hashchange', function () {
   var prev = S.view + S.ev + S.tab; applyHash();
   if (S.view === 'eventos' && !evById(S.ev)) S.ev = DB.eventos.length ? DB.eventos[0].id : null;
   if (prev !== S.view + S.ev + S.tab) { if (S.view !== 'eventos') S.f = { est: 'todos', rel: 'todos', g: 'todos' }; render(); window.scrollTo(0, 0); }
+});
+/* Enlaces a un evento desde Inicio: fijan el filtro de documentos (por ejemplo "Sin Síntesis") antes de navegar. */
+document.addEventListener('click', function (e) {
+  var a = e.target.closest('a[data-evgo]'); if (!a) return;
+  S.f = { est: a.getAttribute('data-fest') || 'todos', rel: 'todos', g: 'todos' };
 });
 /* Salto al contenido: lleva el foco al área principal sin cambiar la dirección. */
 document.addEventListener('click', function (e) {

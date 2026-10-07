@@ -328,3 +328,9 @@ fieldset.plain legend{padding:0;margin-bottom:6px}
 body[data-role="lectura"] .edit{display:none!important}
 body:not([data-role="admin"]) .adm{display:none!important}
 .ucard .iconbtn .lbl{position:static;width:auto;height:auto;overflow:visible;clip:auto}
+/* Modo de alto contraste (Windows): los fondos de color desaparecen; el estado activo se marca con borde. */
+@media (forced-colors:active){
+  .side-nav a[aria-current="page"],.tabbar a[aria-current="page"],.ucard a[aria-current="page"],.chip[aria-pressed="true"],.tabs button[aria-selected="true"],.ev-list a[aria-current="true"],.types button[aria-pressed="true"]{outline:3px solid CanvasText;outline-offset:-3px}
+  .hero,.st,.adtag,.pill-count{border:1px solid CanvasText}
+  .hbar i,.meter i{forced-color-adjust:none}
+}
