@@ -87,8 +87,8 @@ SVG en línea, trazo de 1,75 px, `stroke="currentColor"`, sin relleno, 20 × 20 
 ## 6. Componentes
 
 ### Navegación
-- **Celular (< 768 px):** barra inferior fija con 5 lugares (Inicio, Semana, Novedades, Eventos, Cuenta), ícono + texto, 56 px de alto, respeta `env(safe-area-inset-bottom)`. Miembros (solo admin) se abre desde Cuenta.
-- **Escritorio:** barra superior con la marca, las secciones (incluida Miembros para admin) y el usuario. La sección actual lleva `aria-current="page"` y subrayado de 2 px en color de acción.
+- **Celular y tablet vertical (< 900 px):** barra inferior fija con 5 lugares (Inicio, Semana, Novedades, Eventos, Cuenta), ícono + texto, 56 px de alto, respeta `env(safe-area-inset-bottom)`. Miembros (solo admin) se abre desde Cuenta.
+- **Escritorio (≥ 900 px):** barra superior con la marca, las secciones (incluida Miembros para admin) y el usuario. La sección actual lleva `aria-current="page"` y subrayado de 2 px en color de acción.
 
 ### Bloque "Requiere atención hoy" (Inicio)
 Primer bloque de Inicio. Calculado solo con datos ya cargados: tareas de hoy sin completar, documentos recibidos sin Síntesis y novedades en espera (Qrx). Una superficie con filas; cada fila: ícono, texto, cantidad en mono y enlace a la pantalla correspondiente. Si no hay nada: "Nada pendiente para hoy" con ícono de check en verde.
@@ -113,8 +113,8 @@ Los chips de filtro son botones con `aria-pressed`; el activo usa `--primary` / 
 - Deshabilitado: opacidad 0,55 y `aria-busy="true"` mientras guarda. Sin flechas agregadas.
 
 ### Documentos: tabla y tarjetas
-- **Escritorio (≥ 768 px):** tabla con encabezado fijo en tono de superficie, código en mono, filas separadas por línea.
-- **Celular:** una tarjeta por documento: código (mono) y asunto arriba; chip de estado; botones "Abrir" y "Abrir Síntesis" abajo (o "Sin archivo" si no hay link). Las acciones de estado (Marcar recibido, etc.) debajo, como secundarios.
+- **Escritorio (≥ 900 px):** tabla con encabezado fijo en tono de superficie, código en mono, filas separadas por línea.
+- **Celular y tablet vertical (< 900 px):** una tarjeta por documento: código (mono) y asunto arriba; chip de estado; botones "Abrir" y "Abrir Síntesis" abajo (o "Sin archivo" si no hay link). Las acciones de estado (Marcar recibido, etc.) debajo, como secundarios.
 
 ### Estados de vista
 Mismo estilo en todas las pantallas: **cargando** (texto "Cargando…" con `role="status"`), **vacío** (texto secundario centrado, sin ilustraciones), **error** (superficie con texto y botón "Reintentar", `role="alert"`), **éxito** (aviso flotante inferior con `role="status"`).
