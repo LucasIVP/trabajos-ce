@@ -412,10 +412,25 @@ function vLogin() {
     '<button class="btn ghost" type="button" data-act="forgot">Olvidé mi clave</button>' +
     '<p class="note" style="margin:0">¿No tenés cuenta? Pedísela a quien administra el portal. No hay registro abierto.</p></form></main>';
 }
+/* Requisitos de clave: los mismos que exige Supabase (Authentication > Email): 12 caracteres,
+   minúscula, mayúscula, número y símbolo. Se controlan antes de enviar para avisar en español. */
+var PW_REQ = [
+  ['len', 'Al menos 12 caracteres', function (p) { return p.length >= 12; }],
+  ['low', 'Una letra minúscula (a-z)', function (p) { return /[a-z]/.test(p); }],
+  ['up', 'Una letra mayúscula (A-Z)', function (p) { return /[A-Z]/.test(p); }],
+  ['num', 'Un número (0-9)', function (p) { return /[0-9]/.test(p); }],
+  ['sym', 'Un símbolo, por ejemplo ! ? # $ % & * -', function (p) { return /[!-\/:-@\[-`{-~]/.test(p); }]
+];
+function pwMissing(p) { return PW_REQ.filter(function (r) { return !r[2](p); }).map(function (r) { return r[1].charAt(0).toLowerCase() + r[1].slice(1); }); }
+function pwReqHTML(p) {
+  return PW_REQ.map(function (r) { var ok = r[2](p || ''); return '<li class="' + (ok ? 'ok' : '') + '"><span aria-hidden="true">' + (ok ? '✓' : '○') + '</span> ' + r[1] + '<span class="sr-only">' + (ok ? ': cumplido' : ': falta') + '</span></li>'; }).join('');
+}
+function pwErr(msg) { var e = $('#pwerr'); if (e) { e.textContent = msg; e.hidden = !msg; } }
 function vSetPw() {
-  return '<main class="wrap"><form class="panel login form" id="pwf"><h1 class="mark">Portal CE</h1><div class="muted">Elegí tu clave para entrar al portal.</div>' +
-    (S.err ? '<div class="err" role="alert">' + esc(S.err) + '</div>' : '') +
-    '<label for="np">Clave nueva (mínimo 12 caracteres)<input id="np" type="password" minlength="12" autocomplete="new-password" required></label>' +
+  return '<main class="wrap"><form class="panel login form" id="pwf" novalidate><h1 class="mark">Portal CE</h1><div class="muted">Elegí tu clave para entrar al portal.</div>' +
+    '<div class="err" id="pwerr" role="alert"' + (S.err ? '' : ' hidden') + '>' + esc(S.err) + '</div>' +
+    '<label for="np">Clave nueva<input id="np" type="password" minlength="12" autocomplete="new-password" aria-describedby="pwreq" required></label>' +
+    '<div class="note">La clave tiene que tener:</div><ul class="pwreq" id="pwreq">' + pwReqHTML('') + '</ul>' +
     '<label for="np2">Repetir la clave<input id="np2" type="password" minlength="12" autocomplete="new-password" required></label>' +
     '<button class="btn primary" type="submit" style="padding:10px">Guardar clave</button></form></main>';
 }
@@ -600,12 +615,22 @@ document.addEventListener('submit', async function (e) {
     return;
   }
   if (form.id === 'pwf') {
-    var p1 = $('#np').value, p2 = $('#np2').value;
-    if (p1 !== p2) { S.err = 'Las claves no coinciden.'; render(); return; }
-    if (p1.length < 12) { S.err = 'La clave debe tener al menos 12 caracteres.'; render(); return; }
+    var p1 = $('#np').value, p2 = $('#np2').value, falta = pwMissing(p1);
+    /* Los errores se muestran sin redibujar, para no borrar lo que la persona escribió. */
+    if (falta.length) { pwErr('A la clave le falta: ' + falta.join(', ') + '.'); $('#np').focus(); return; }
+    if (p1 !== p2) { pwErr('Las dos claves no coinciden.'); $('#np2').focus(); return; }
+    pwErr('');
     await lock(btn, async function () {
       var u = await sb.auth.updateUser({ password: p1 });
-      if (u.error) { S.err = 'No se pudo guardar la clave: ' + u.error.message; render(); return; }
+      if (u.error) {
+        var c = u.error.code;
+        pwErr(c === 'weak_password' ? 'Supabase rechazó la clave por débil. Revisá que cumpla los cinco requisitos (los símbolos válidos son los del teclado en inglés, como ! ? # $ % & * -).'
+          : c === 'same_password' ? 'La clave nueva tiene que ser distinta de la anterior.'
+          : c === 'reauthentication_needed' ? 'Por seguridad, salí y volvé a ingresar antes de cambiar la clave.'
+          : 'No se pudo guardar la clave. Probá de nuevo en un momento.');
+        report('clave: ' + (c || '') + ' ' + u.error.message, true);
+        return;
+      }
       S.setpw = false; S.err = ''; history.replaceState(null, '', location.pathname);
       toast('Clave guardada');
       await boot(S.session);
@@ -652,7 +677,9 @@ document.addEventListener('submit', async function (e) {
   }
 });
 document.addEventListener('input', function (e) {
-  var t = e.target; if (!S.cal) return;
+  var t = e.target;
+  if (t.id === 'np') { var l = $('#pwreq'); if (l) l.innerHTML = pwReqHTML(t.value); return; }
+  if (!S.cal) return;
   if (t.dataset.cf) { S.cal[t.dataset.cf] = t.dataset.cf === 'dur' ? +t.value : t.value; var p = document.getElementById('calprev'); if (p) p.innerHTML = calPrev(); }
   else if (t.dataset.ci) { S.cal.inv[t.dataset.ci] = t.checked ? 1 : 0; var q = document.getElementById('calprev'); if (q) q.innerHTML = calPrev(); }
 });

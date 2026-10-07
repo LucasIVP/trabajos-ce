@@ -165,3 +165,7 @@ a.lnk:hover{border-color:var(--primary)}
 .btn[aria-busy="true"]{cursor:progress}
 /* En pantallas táctiles, botones y filtros más grandes para el dedo */
 @media (pointer:coarse){.btn.ghost{padding:7px 12px;font-size:13.5px} .chip{padding:7px 13px;font-size:13.5px} .nav button,.tabs button{padding:11px 12px}}
+.pwreq{list-style:none;margin:-4px 0 0;padding:0;display:grid;gap:3px;font-size:12.5px;color:var(--muted)}
+.pwreq li.ok{color:var(--baja)}
+.pwreq span[aria-hidden]{display:inline-block;width:1.1em;font-weight:600}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
