@@ -49,7 +49,6 @@ var S = { me: null, session: null, noRole: false, setpw: false, loading: true, e
 if (/type=(invite|recovery)/.test(location.hash)) S.setpw = true;
 if (/access_token=/.test(location.hash)) S.fresh = true;
 
-var NAV = [['inicio', 'Inicio'], ['semana', 'Semana'], ['novedades', 'Novedades'], ['eventos', 'Eventos'], ['miembros', 'Miembros', 'adm'], ['cuenta', 'Mi cuenta']];
 var ROLES = { lectura: 'Lectura', edicion: 'Edición', admin: 'Administración' };
 
 /* El segundo factor es obligatorio para todos: la base no entrega nada a una sesión sin código (aal2).
@@ -224,7 +223,10 @@ function meter(c) {
   return '<div class="meter" role="img" aria-label="Avance de documentos: ' + c.listo + ' listos, ' + c.sin + ' sin Síntesis y ' + c.no + ' no disponibles, de ' + c.t + '"><i class="m-ok" data-w="' + (c.listo / c.t * 100).toFixed(2) + '"></i><i class="m-mid" data-w="' + (c.sin / c.t * 100).toFixed(2) + '"></i></div>' +
     '<div class="legend"><span><i class="k-ok"></i>Listos ' + c.listo + '</span><span><i class="k-mid"></i>Sin Síntesis ' + c.sin + '</span><span><i class="k-no"></i>No disponibles ' + c.no + '</span></div>';
 }
-function hydrate(root) { root.querySelectorAll('[data-w]').forEach(function (el) { el.style.setProperty('width', el.getAttribute('data-w') + '%'); }); }
+function hydrate(root) {
+  root.querySelectorAll('[data-w]').forEach(function (el) { el.style.setProperty('width', el.getAttribute('data-w') + '%'); });
+  root.querySelectorAll('[data-grow]').forEach(function (el) { el.style.setProperty('flex-grow', el.getAttribute('data-grow')); });
+}
 /* Cuenta regresiva de un evento */
 function countdown(e) {
   var n = days(e.desde);
@@ -258,7 +260,8 @@ function emptyIn(msg) { return '<div class="state">' + msg + '</div>'; }
 function errorBox(msg) { return '<div class="panel state state-error" role="alert"><p>' + esc(msg) + '</p><button class="btn primary" type="button" data-act="retry">Reintentar</button></div>'; }
 function memberName(id) { var m = DB.members.filter(function (x) { return x.id === id; })[0]; return m ? (m.nombre || m.email) : (id ? 'cuenta borrada' : 'sistema'); }
 /* Escritorio o celular: la tabla de documentos y la navegación cambian según el ancho. */
-var MQ_DESK = window.matchMedia('(min-width: 900px)');
+/* Con barra lateral (≥ 1024 px) el contenido es más angosto: la tabla entra desde 1180 px; entre 900 y 1023 px no hay barra lateral. */
+var MQ_DESK = window.matchMedia('(min-width: 900px) and (max-width: 1023px), (min-width: 1180px)');
 function isDesk() { return MQ_DESK.matches; }
 MQ_DESK.addEventListener('change', function () { if (S.me) render(); });
 
@@ -275,13 +278,14 @@ function applyTheme(t) {
   tc.forEach(function (m) { var dark = t ? t === 'dark' : /dark/.test(m.getAttribute('media') || ''); m.setAttribute('content', dark ? '#142033' : '#FFFFFF'); });
 }
 applyTheme(themePref());
-function themeBtn() {
+function themeBtn(where) {
   var dark = themeNow() === 'dark';
-  return '<button class="iconbtn" id="themebtn" type="button" data-theme-set="' + (dark ? 'light' : 'dark') + '" aria-label="' + (dark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro') + '">' + ic(dark ? 'sun' : 'moon') + '</button>';
+  return '<button class="iconbtn" id="themebtn-' + (where || 'auth') + '" type="button" data-theme-set="' + (dark ? 'light' : 'dark') + '" aria-label="' + (dark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro') + '">' + ic(dark ? 'sun' : 'moon') + '</button>';
 }
 
 /* ---------- vistas ---------- */
-function attention() {
+/* Pendientes de hoy, calculados solo con datos ya cargados (sin consultas nuevas). */
+function attentionRows() {
   var today = ds(T0);
   var tk = DB.tareas.filter(function (t) { return t.dia === today && t.estado !== 'Completadas'; }).length;
   var sinEv = {}, sin = 0;
@@ -289,20 +293,33 @@ function attention() {
   var evSin = Object.keys(sinEv)[0];
   var q = DB.novs.filter(function (n) { return n.qrx; }).length;
   var rows = [];
-  if (tk) rows.push(['clock', 'Tareas para hoy sin completar', tk, '<button class="btn sm" type="button" data-v="semana">Ver semana</button>']);
-  if (sin) rows.push(['alert', 'Documentos recibidos sin Síntesis', sin, '<button class="btn sm" type="button" data-ev="' + esc(evSin) + '" data-go="docs" data-fest="sin">Ver documentos</button>']);
-  if (q) rows.push(['clock', 'Novedades en espera (Qrx)', q, '<button class="btn sm" type="button" data-v="novedades">Ver novedades</button>']);
-  return '<section class="panel" aria-labelledby="h-attn"><header><h2 id="h-attn">Requiere atención hoy</h2><span class="note mono">' + fm(today) + '</span></header>' +
-    (rows.length ? '<div class="rows">' + rows.map(function (r) { return '<div class="attn-row">' + ic(r[0]) + '<span class="txt">' + r[1] + '</span><span class="num">' + r[2] + '</span>' + r[3] + '</div>'; }).join('') + '</div>'
+  if (tk) rows.push({ icon: 'week', title: 'Tareas para hoy', n: tk, detail: tk === 1 ? 'sin completar' : 'sin completar', btn: '<button class="btn sm" type="button" data-v="semana">Ver semana</button>' });
+  if (sin) rows.push({ icon: 'alert', title: 'Documentos sin Síntesis', n: sin, detail: sin === 1 ? 'recibido, falta la Síntesis' : 'recibidos, falta la Síntesis', btn: '<button class="btn sm" type="button" data-ev="' + esc(evSin) + '" data-go="docs" data-fest="sin">Ver documentos</button>' });
+  if (q) rows.push({ icon: 'clock', title: 'Novedades en espera (Qrx)', n: q, detail: 'esperando respuesta', btn: '<button class="btn sm" type="button" data-v="novedades">Ver novedades</button>' });
+  return rows;
+}
+function attention(rows) {
+  var total = rows.reduce(function (a, r) { return a + r.n; }, 0);
+  return '<section class="panel" aria-labelledby="h-attn"><header><h2 id="h-attn">Requiere atención hoy</h2>' + (total ? '<span class="pill-count"><span class="sr-only">Pendientes: </span>' + total + '</span>' : '') + '</header>' +
+    (rows.length ? '<div class="rows">' + rows.map(function (r) { return '<div class="attn-row"><span class="ibox">' + ic(r.icon) + '</span><span class="txt"><b>' + r.title + '</b><span><span class="num">' + r.n + '</span> ' + r.detail + '</span></span>' + r.btn + '</div>'; }).join('') + '</div>'
       : '<div class="attn-ok">' + ic('check') + '<span>Nada pendiente para hoy.</span></div>') + '</section>';
 }
+/* Barra de avance de la tarjeta azul: tres tramos con separación; el tamaño de cada uno (flex-grow) se fija al dibujar. */
+function heroBar(c) {
+  var seg = [['h-ok', c.listo], ['h-mid', c.sin], ['h-no', c.no]].filter(function (x) { return x[1] > 0; });
+  return '<div class="hbar" role="img" aria-label="Avance de documentos: ' + c.listo + ' listos, ' + c.sin + ' sin Síntesis y ' + c.no + ' aún no disponibles, de ' + c.t + '">' + seg.map(function (x) { return '<i class="' + x[0] + '" data-grow="' + x[1] + '"></i>'; }).join('') + '</div>' +
+    '<div class="hlegend"><span><b>' + c.listo + '</b> listos</span><span><b>' + c.sin + '</b> sin Síntesis</span><span><b>' + c.no + '</b> aún no disponibles</span></div>';
+}
+var HERO_DECO = '<svg class="hero-deco" viewBox="0 0 260 260" aria-hidden="true" focusable="false"><circle cx="130" cy="130" r="40"/><circle cx="130" cy="130" r="75"/><circle cx="130" cy="130" r="110"/><circle cx="130" cy="130" r="125"/></svg>';
 function activeEvent(cur) {
   if (!cur) return empty('Todavía no hay eventos próximos cargados.');
-  var cn = docCounts(DB.docs[cur.id] || []);
-  return '<section class="panel evact" aria-labelledby="h-evact"><div class="body"><div><h2 id="h-evact">' + esc(cur.n) + '</h2><p class="meta">' + esc(cur.lugar) + ' · <span class="mono">' + range(cur) + '</span></p></div>' +
-    countdown(cur) +
-    (cn.t ? '<div><b class="num">' + cn.listo + '</b> <span class="muted">de ' + cn.t + ' documentos listos (con Síntesis o sin necesidad)</span></div>' + meter(cn) : '<p class="muted">Todavía no hay documentos cargados para este evento.</p>') +
-    '<div class="chips"><button class="btn primary" data-ev="' + esc(cur.id) + '" data-go="docs" type="button">Abrir</button><button class="btn" data-v="eventos" type="button">Ver todos</button></div></div></section>';
+  var cn = docCounts(DB.docs[cur.id] || []), n = days(cur.desde);
+  var info = '<div><div class="hero-muted">' + (n > 0 ? (n === 1 ? 'día para' : 'días para') : 'Evento en curso') + '</div><h2 id="h-evact">' + esc(cur.n) + '</h2><div class="hero-muted">' + esc(cur.lugar) + ' · <span class="mono">' + range(cur) + '</span></div></div>';
+  return '<section class="hero" aria-labelledby="h-evact">' + HERO_DECO +
+    '<div><span class="st st-strong">' + (n > 0 ? 'Próximo evento' : 'En curso') + '</span></div>' +
+    '<div class="hero-main">' + (n > 0 ? '<span class="hero-num">' + n + '</span>' : '') + info + '</div>' +
+    (cn.t ? heroBar(cn) : '<p class="hero-muted">Todavía no hay documentos cargados para este evento.</p>') +
+    '<div class="chips"><button class="btn" data-ev="' + esc(cur.id) + '" data-go="docs" type="button">Abrir</button><button class="btn ghost" data-v="eventos" type="button">Ver todos</button></div></section>';
 }
 function vInicio() {
   var next = DB.eventos.filter(function (e) { return days(e.hasta) >= 0; }).sort(function (a, b) { return a.desde < b.desde ? -1 : 1; });
@@ -310,15 +327,16 @@ function vInicio() {
   var m0 = ds(monday(0)), m1 = ds(addD(monday(0), 6));
   var wk = DB.tareas.filter(function (t) { return t.dia && t.dia >= m0 && t.dia <= m1 && t.estado !== 'Completadas'; }).sort(function (a, b) { return a.dia < b.dia ? -1 : 1; }).slice(0, 6);
   var name = S.me.nombre || S.me.email;
-  var otros = next.slice(1, 4);
-  return '<div class="head"><div><h1>Buen día, ' + esc(name) + '</h1><p>Esto es lo que hay para el Comité Ejecutivo hoy.</p></div></div>' +
-    attention() +
-    '<div class="grid2"><div class="stack">' + activeEvent(next[0]) +
-    '<section class="panel" aria-labelledby="h-wk"><header><h2 id="h-wk">Esta semana, por hacer</h2><button class="btn sm" data-v="semana" type="button">Abrir semana</button></header><div class="body">' +
-    (wk.length ? wk.map(taskHTML).join('') : emptyIn('No hay tareas pendientes esta semana.')) + '</div></section></div>' +
+  var otros = next.slice(1, 4), rows = attentionRows();
+  var total = rows.reduce(function (a, r) { return a + r.n; }, 0);
+  return '<div class="head hello"><div><p class="kicker">' + DIAS[T0.getDay()] + ' ' + fm(ds(T0)) + '</p><h1>Buen día, ' + esc(name) + '</h1></div>' +
+    '<p class="summary">' + (total ? 'Hoy hay <b>' + total + '</b> ' + (total === 1 ? 'pendiente' : 'pendientes') + ' para resolver.' : 'No hay pendientes para hoy.') + '</p></div>' +
+    '<div class="grid2">' + activeEvent(next[0]) + attention(rows) + '</div>' +
+    '<div class="grid2"><section class="panel" aria-labelledby="h-wk"><header><h2 id="h-wk">Esta semana, por hacer</h2><button class="btn sm" data-v="semana" type="button">Abrir semana</button></header><div class="body">' +
+    (wk.length ? wk.map(taskHTML).join('') : emptyIn('No hay tareas pendientes esta semana.')) + '</div></section>' +
     '<div class="stack">' +
     '<section class="panel" aria-labelledby="h-qrx"><header><h2 id="h-qrx">En espera (Qrx)</h2>' + st('warn', 'clock', String(q.length)) + '</header>' +
-    (q.length ? '<div class="rows">' + q.map(function (n) { return '<div class="evlist-row"><div><span class="mono muted" translate="no">#' + esc(n.ad) + ' · ' + fm(n.fecha) + '</span><p class="wrapw">' + esc(n.texto) + '</p></div></div>'; }).join('') + '</div>' : emptyIn('Nada en espera.')) + '</section>' +
+    (q.length ? '<div class="rows">' + q.map(function (n) { return '<div class="evlist-row"><div><span class="adtag" translate="no">' + esc(n.ad) + '</span> <span class="mono muted">' + fm(n.fecha) + '</span><p class="wrapw">' + esc(n.texto) + '</p></div></div>'; }).join('') + '</div>' : '<div class="body">' + emptyIn('Nada en espera.') + '</div>') + '</section>' +
     (otros.length ? '<section class="panel" aria-labelledby="h-next"><header><h2 id="h-next">Próximos eventos</h2></header><div class="rows">' + otros.map(function (e) { return '<div class="evlist-row"><div><b>' + esc(e.n) + '</b><p class="note mono">' + range(e) + '</p></div><button class="btn sm" type="button" data-ev="' + esc(e.id) + '">Abrir</button></div>'; }).join('') + '</div></section>' : '') +
     '</div></div>';
 }
@@ -504,7 +522,7 @@ function enrollHTML() {
 function authWrap(inner, wide) { return '<main class="wrap"><div class="authtop">' + themeBtn() + '</div>' + inner + '</main>'; }
 function vEnrollGate() {
   var em = S.session && S.session.user ? S.session.user.email : '';
-  return authWrap('<section class="panel auth wide"><h1 class="mark">Portal CE</h1>' +
+  return authWrap('<section class="panel auth wide"><h1 class="mark"><span class="logo" aria-hidden="true">CE</span>Portal CE</h1>' +
     '<p>Para entrar al portal hace falta el <b>segundo factor</b>: además de la clave, un código de 6 números que genera una app en tu celular. Se configura una sola vez.</p>' +
     '<p class="note">Cuenta: <span class="mono">' + esc(em) + '</span></p>' + enrollHTML() +
     '<button class="btn" type="button" data-act="logout">Salir</button></section>');
@@ -528,7 +546,7 @@ function vSetup() {
   return '<main class="wrap"><div class="panel auth"><h2>Falta configurar el portal</h2><p>Abrí <span class="mono">js/config.js</span> y pegá la clave pública del proyecto de Supabase (Project Settings, API Keys, clave publishable).</p></div></main>';
 }
 function vLogin() {
-  return authWrap('<form class="panel auth form" id="lf"><h1 class="mark">Portal CE</h1><p class="muted">Ingresá con la cuenta que te dio el equipo.</p>' +
+  return authWrap('<form class="panel auth form" id="lf"><h1 class="mark"><span class="logo" aria-hidden="true">CE</span>Portal CE</h1><p class="muted">Ingresá con la cuenta que te dio el equipo.</p>' +
     (S.err ? '<div class="err" role="alert">' + esc(S.err) + '</div>' : '') +
     '<label for="lm">Correo<input id="lm" type="email" name="email" placeholder="nombre@ejemplo.com" autocomplete="username" spellcheck="false" autocapitalize="off" required></label>' +
     '<label for="lp">Clave<input id="lp" type="password" name="password" autocomplete="current-password" required></label>' +
@@ -564,7 +582,7 @@ function clearFieldErr(el) {
 }
 function pwErr(msg) { var e = $('#pwerr'); if (e) { e.textContent = msg; e.hidden = !msg; } }
 function vSetPw() {
-  return authWrap('<form class="panel auth form" id="pwf" novalidate><h1 class="mark">Portal CE</h1><p class="muted">Elegí tu clave para entrar al portal.</p>' +
+  return authWrap('<form class="panel auth form" id="pwf" novalidate><h1 class="mark"><span class="logo" aria-hidden="true">CE</span>Portal CE</h1><p class="muted">Elegí tu clave para entrar al portal.</p>' +
     '<div class="err" id="pwerr" role="alert"' + (S.err ? '' : ' hidden') + '>' + esc(S.err) + '</div>' +
     '<label for="np">Clave nueva<input id="np" type="password" minlength="12" autocomplete="new-password" aria-describedby="pwreq" required></label>' +
     '<div class="note">La clave tiene que tener:</div><ul class="pwreq" id="pwreq">' + pwReqHTML('') + '</ul>' +
@@ -572,7 +590,7 @@ function vSetPw() {
     '<button class="btn primary" type="submit">Guardar clave</button></form>');
 }
 function vMfaCode() {
-  return authWrap('<form class="panel auth form" id="mfaf"><h1 class="mark">Portal CE</h1><p class="muted">Escribí el código de 6 números que muestra la app de tu celular.</p>' +
+  return authWrap('<form class="panel auth form" id="mfaf"><h1 class="mark"><span class="logo" aria-hidden="true">CE</span>Portal CE</h1><p class="muted">Escribí el código de 6 números que muestra la app de tu celular.</p>' +
     (S.err ? '<div class="err" role="alert">' + esc(S.err) + '</div>' : '') +
     '<label for="mc">Código<input id="mc" type="text" inputmode="numeric" autocomplete="one-time-code" spellcheck="false" pattern="[0-9]{6}" maxlength="6" required></label>' +
     '<button class="btn primary" type="submit">Verificar</button>' +
@@ -589,13 +607,22 @@ function vConnErr() {
 var NAV_ICON = { inicio: 'home', semana: 'week', novedades: 'news', eventos: 'event', miembros: 'users', cuenta: 'user' };
 var TABBAR = [['inicio', 'Inicio'], ['semana', 'Semana'], ['novedades', 'Novedades'], ['eventos', 'Eventos'], ['cuenta', 'Cuenta']];
 function frame() {
-  var u = S.me;
+  var u = S.me, uname = u.nombre || u.email;
   var main = S.dataErr ? errorBox(S.dataErr) : V[S.view]();
   var curBottom = S.view === 'miembros' ? 'cuenta' : S.view;
-  return '<a class="skip" href="#view">Ir al contenido</a><header class="bar"><div class="bar-in"><span class="brand">Portal CE <small>Comité Ejecutivo</small></span>' +
-    '<nav class="nav-top" aria-label="Secciones">' + NAV.map(function (n) { return '<a class="' + (n[2] || '') + '" href="#' + n[0] + '" data-nav="top" data-to="' + n[0] + '"' + (S.view === n[0] ? ' aria-current="page"' : '') + '>' + n[1] + '</a>'; }).join('') + '</nav>' +
-    '<div class="who"><span class="who-name">' + esc(u.nombre || u.email) + ' <span class="muted">· ' + esc(ROLES[u.rol] || '') + '</span></span>' + themeBtn() +
-    '<button class="iconbtn" type="button" data-act="logout">' + ic('out') + '<span class="lbl">Salir</span></button></div></div></header>' +
+  var qn = DB.novs.filter(function (n) { return n.qrx; }).length;
+  function item(v, label, cls) {
+    return '<a href="#' + v + '" data-to="' + v + '" data-nav="side"' + (cls ? ' class="' + cls + '"' : '') + (S.view === v ? ' aria-current="page"' : '') + '>' + ic(NAV_ICON[v]) + '<span>' + label + '</span>' +
+      (v === 'novedades' && qn ? '<span class="count"><span class="sr-only">, en espera: </span>' + qn + '</span>' : '') + '</a>';
+  }
+  var logout = '<button class="iconbtn" type="button" data-act="logout">' + ic('out') + '<span class="lbl">Salir</span></button>';
+  var brand = function (w) { return '<a class="brand" href="#inicio" data-to="inicio" data-nav="brand-' + w + '"><span class="logo" aria-hidden="true">CE</span><span class="bname">Portal CE</span></a>'; };
+  return '<a class="skip" href="#view">Ir al contenido</a>' +
+    '<aside class="side">' + brand('side') +
+    '<nav class="side-nav" aria-label="Secciones"><div class="grp-l">Trabajo</div>' + item('inicio', 'Inicio') + item('semana', 'Semana') + item('novedades', 'Novedades') + item('eventos', 'Eventos') +
+    '<div class="grp-l sep adm">Administración</div>' + item('miembros', 'Miembros', 'adm') + '</nav>' +
+    '<div class="ucard"><a href="#cuenta" data-to="cuenta" data-nav="ucard"' + (S.view === 'cuenta' ? ' aria-current="page"' : '') + '><span class="avatar" aria-hidden="true">' + esc(uname.charAt(0).toUpperCase()) + '</span><span class="uname"><b>' + esc(uname) + '</b><span>' + esc(ROLES[u.rol] || '') + '</span></span><span class="sr-only"> · Mi cuenta</span></a>' + themeBtn('side') + logout + '</div></aside>' +
+    '<header class="bar"><div class="bar-in">' + brand('bar') + themeBtn('bar') + logout + '</div></header>' +
     '<main class="wrap" id="view">' + main + '</main>' +
     '<nav class="tabbar" aria-label="Secciones">' + TABBAR.map(function (n) { return '<a href="#' + n[0] + '" data-nav="bottom" data-to="' + n[0] + '"' + (curBottom === n[0] ? ' aria-current="page"' : '') + '>' + ic(NAV_ICON[n[0]]) + '<span>' + n[1] + '</span></a>'; }).join('') + '</nav>';
 }
