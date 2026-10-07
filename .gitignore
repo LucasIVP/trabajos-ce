@@ -18,3 +18,7 @@ Claude outputs/
 # Capturas de las pruebas de interfaz (nunca al repo)
 capturas/
 .playwright-cli/
+
+# Mockups de referencia (privados, nunca al repo)
+referencia-mockups/
+*.dc.html

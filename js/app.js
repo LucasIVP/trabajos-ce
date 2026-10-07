@@ -272,7 +272,7 @@ function applyTheme(t) {
   if (t) document.documentElement.setAttribute('data-theme', t); else document.documentElement.removeAttribute('data-theme');
   /* Con tema elegido a mano, las dos etiquetas theme-color toman ese color; en automático, cada una el suyo. */
   var tc = document.querySelectorAll('meta[name="theme-color"]');
-  tc.forEach(function (m) { var dark = t ? t === 'dark' : /dark/.test(m.getAttribute('media') || ''); m.setAttribute('content', dark ? '#172033' : '#F9FAF7'); });
+  tc.forEach(function (m) { var dark = t ? t === 'dark' : /dark/.test(m.getAttribute('media') || ''); m.setAttribute('content', dark ? '#142033' : '#FFFFFF'); });
 }
 applyTheme(themePref());
 function themeBtn() {
