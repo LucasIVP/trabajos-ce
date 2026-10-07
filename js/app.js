@@ -14,7 +14,11 @@ var $ = function (s) { return document.querySelector(s); };
 var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
 var MON = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 var DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
-var NOW = new Date(), T0 = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate());
+/* Fechas y horas siempre en hora de Argentina, aunque el dispositivo esté en otra zona (por ejemplo, de viaje). */
+var TZ = 'America/Argentina/Buenos_Aires';
+var DIA_AR = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
+var FECHA_HORA_AR = new Intl.DateTimeFormat('es-AR', { timeZone: TZ, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+var T0 = (function () { var p = DIA_AR.format(new Date()).split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); })();
 function pd(s) { var p = String(s).slice(0, 10).split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
 function ds(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
 function addD(d, n) { return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n); }
@@ -27,7 +31,7 @@ function range(e) { return e.desde === e.hasta ? fm(e.desde) : fm(e.desde) + ' a
 function monday(off) { return addD(T0, -((T0.getDay() + 6) % 7) + 7 * off); }
 function safeUrl(u) { return /^https:\/\//i.test(u || '') ? u : null; }
 function toast(m) { var t = $('#toast'); t.textContent = m; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(function () { t.hidden = true; }, 3200); }
-function fdt(s) { var d = new Date(s); return p2(d.getDate()) + '/' + p2(d.getMonth() + 1) + '/' + d.getFullYear() + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes()); }
+function fdt(s) { return FECHA_HORA_AR.format(new Date(s)).replace(',', ''); }
 
 var cfg = window.PORTAL_CONFIG || {};
 var configured = cfg.SUPABASE_URL && cfg.SUPABASE_KEY && cfg.SUPABASE_KEY.indexOf('PEGAR_') !== 0;
@@ -235,7 +239,7 @@ var NEXT = { 'Pendiente': ['Empezar', 'En Proceso'], 'En Proceso': ['Completar',
 function taskHTML(t) {
   var p = ['alta', 'media', 'baja'].indexOf(t.prioridad) > -1 ? t.prioridad : 'media';
   var nx = NEXT[t.estado] || NEXT.Pendiente;
-  return '<div class="tk ' + p + (t.estado === 'Completadas' ? ' done' : '') + '"><div class="t">' + esc(t.titulo) + '</div><div class="m">' + (t.ad ? '<span class="mono">#' + esc(t.ad) + '</span>' : '<span>Sin expediente</span>') +
+  return '<div class="tk ' + p + (t.estado === 'Completadas' ? ' done' : '') + '"><div class="t">' + esc(t.titulo) + '</div><div class="m">' + (t.ad ? '<span class="mono" translate="no">#' + esc(t.ad) + '</span>' : '<span>Sin expediente</span>') +
     (p === 'alta' ? st('warn', 'alert', 'Prioridad alta') : '') +
     (t.estado === 'En Proceso' ? st('neutral', 'clock', 'En proceso') : '') + (t.estado === 'Completadas' ? st('ok', 'check', 'Hecha') : '') +
     '<button type="button" class="btn sm edit" data-tk="' + esc(t.id) + '">' + nx[0] + '</button>' + delBtn('tareas', t.id, 'la tarea “' + t.titulo + '”') + '</div></div>';
@@ -247,7 +251,7 @@ function novHTML(n) {
     (n.cal ? '<button class="btn sm edit" type="button" data-cal="from" data-nv="' + i + '">Preparar evento de Calendar</button>' : '') +
     delBtn('novedades', n.id, 'la novedad del ' + fm(n.fecha) + ' (#' + n.ad + ')') + '</div></div></div>';
 }
-function expOptions() { return DB.expList.map(function (x) { return '<option value="' + esc(x.ad) + '">#' + esc(x.ad) + ' ' + esc(x.nombre) + '</option>'; }).join(''); }
+function expOptions() { return DB.expList.map(function (x) { return '<option value="' + esc(x.ad) + '" translate="no">#' + esc(x.ad) + ' ' + esc(x.nombre) + '</option>'; }).join(''); }
 /* Estados de vista con el mismo estilo en todas las pantallas */
 function empty(msg) { return '<div class="panel state">' + msg + '</div>'; }
 function emptyIn(msg) { return '<div class="state">' + msg + '</div>'; }
@@ -314,7 +318,7 @@ function vInicio() {
     (wk.length ? wk.map(taskHTML).join('') : emptyIn('No hay tareas pendientes esta semana.')) + '</div></section></div>' +
     '<div class="stack">' +
     '<section class="panel" aria-labelledby="h-qrx"><header><h2 id="h-qrx">En espera (Qrx)</h2>' + st('warn', 'clock', String(q.length)) + '</header>' +
-    (q.length ? '<div class="rows">' + q.map(function (n) { return '<div class="evlist-row"><div><span class="mono muted">#' + esc(n.ad) + ' · ' + fm(n.fecha) + '</span><p class="wrapw">' + esc(n.texto) + '</p></div></div>'; }).join('') + '</div>' : emptyIn('Nada en espera.')) + '</section>' +
+    (q.length ? '<div class="rows">' + q.map(function (n) { return '<div class="evlist-row"><div><span class="mono muted" translate="no">#' + esc(n.ad) + ' · ' + fm(n.fecha) + '</span><p class="wrapw">' + esc(n.texto) + '</p></div></div>'; }).join('') + '</div>' : emptyIn('Nada en espera.')) + '</section>' +
     (otros.length ? '<section class="panel" aria-labelledby="h-next"><header><h2 id="h-next">Próximos eventos</h2></header><div class="rows">' + otros.map(function (e) { return '<div class="evlist-row"><div><b>' + esc(e.n) + '</b><p class="note mono">' + range(e) + '</p></div><button class="btn sm" type="button" data-ev="' + esc(e.id) + '">Abrir</button></div>'; }).join('') + '</div></section>' : '') +
     '</div></div>';
 }
@@ -390,7 +394,7 @@ function vNov() {
     '<div class="chips"><label class="check"><input type="checkbox" id="nq"> Queda en espera (Qrx)</label><label class="check"><input type="checkbox" id="ntk"> Crear también una tarea</label></div>' +
     '<div><button class="btn primary" type="button" data-act="addnov">Guardar novedad</button></div></div></section>';
   return '<div class="head"><div><h1>Novedades</h1><p>Novedades por expediente, de la más reciente a la más antigua.</p></div><div class="chips"><button class="btn edit" type="button" data-cal="new">Preparar evento de Calendar</button></div></div>' + calPanel() + form +
-    (order.length ? order.map(function (ad) { return '<section class="grp"><h3>#' + esc(ad) + ' <small>' + esc(DB.exp[ad] || '') + '</small></h3>' + g[ad].map(novHTML).join('') + '</section>'; }).join('') : empty('Todavía no hay novedades.'));
+    (order.length ? order.map(function (ad) { return '<section class="grp"><h3><span translate="no">#' + esc(ad) + '</span> <small>' + esc(DB.exp[ad] || '') + '</small></h3>' + g[ad].map(novHTML).join('') + '</section>'; }).join('') : empty('Todavía no hay novedades.'));
 }
 function docActions(d) {
   var lleva = d.lleva_sintesis !== false;
@@ -419,7 +423,7 @@ function docsView(list) {
   if (!isDesk()) {
     return filters + '<div class="panel rows">' + rows.map(function (d) {
       var l = docLinks(d);
-      return '<article class="dcard"><div class="top"><span class="code">' + esc(d.codigo) + '</span><span class="note mono">' + esc(d.punto) + '</span></div><p>' + esc(d.asunto) + '</p>' +
+      return '<article class="dcard"><div class="top"><span class="code" translate="no">' + esc(d.codigo) + '</span><span class="note mono">' + esc(d.punto) + '</span></div><p>' + esc(d.asunto) + '</p>' +
         '<div class="chips">' + docChip(d) + relChip(d.relevancia) + (d.recibido && d.idioma ? '<span class="note mono">' + esc(d.idioma) + '</span>' : '') + '</div>' +
         '<div class="links">' + l[0] + (l[1] ? ' ' + l[1] : '') + '</div>' + docActions(d) + '<div>' + delBtn('documentos', d.id, 'el documento ' + d.codigo) + '</div></article>';
     }).join('') + '</div>';
@@ -427,7 +431,7 @@ function docsView(list) {
   return filters + '<div class="panel tbox"><table class="t-wide"><thead><tr><th scope="col">Punto</th><th scope="col">Documento</th><th scope="col">Asunto</th><th scope="col">Relevancia</th><th scope="col">Idioma</th><th scope="col">Estado</th><th scope="col">Archivos</th></tr></thead><tbody>' +
     rows.map(function (d) {
       var l = docLinks(d);
-      return '<tr><td class="mono muted">' + esc(d.punto) + '</td><td class="code">' + esc(d.codigo) + '<div class="cell-actions">' + delBtn('documentos', d.id, 'el documento ' + d.codigo) + '</div></td><td class="asunto">' + esc(d.asunto) + '</td><td>' + relChip(d.relevancia, true) + '</td><td class="mono">' + (d.recibido ? esc(d.idioma || '—') : '—') + '</td><td>' + docChip(d) + docActions(d) + '</td><td><div class="files">' + l[0] + (l[1] ? l[1] : '') + '</div></td></tr>';
+      return '<tr><td class="mono muted">' + esc(d.punto) + '</td><td class="code" translate="no">' + esc(d.codigo) + '<div class="cell-actions">' + delBtn('documentos', d.id, 'el documento ' + d.codigo) + '</div></td><td class="asunto">' + esc(d.asunto) + '</td><td>' + relChip(d.relevancia, true) + '</td><td class="mono">' + (d.recibido ? esc(d.idioma || '—') : '—') + '</td><td>' + docChip(d) + docActions(d) + '</td><td><div class="files">' + l[0] + (l[1] ? l[1] : '') + '</div></td></tr>';
     }).join('') + '</tbody></table></div>';
 }
 function vEventos() {
@@ -454,7 +458,7 @@ function vEventos() {
     body = rs.length ? '<section class="panel rows">' + rs.map(function (r) { var u = safeUrl(r.url); return '<div class="res-row"><h3>' + esc(r.titulo) + '</h3><p class="note">Link a Drive. Quien no tiene permiso en Drive no puede abrirlo.</p><div class="chips">' + (u ? '<a class="btn sm" href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + ic('file', true) + 'Abrir en Drive</a>' : '<span class="muted">Sin link</span>') + delBtn('recursos', r.id, 'el recurso “' + r.titulo + '”') + '</div></div>'; }).join('') + '</section>' : empty('Todavía no hay recursos cargados para este evento.');
   }
   return '<div class="head"><div><h1>Eventos</h1><p>Cada evento reúne sus documentos, tareas, novedades y recursos.</p></div></div>' +
-    '<div class="ev-layout"><div class="ev-list" role="group" aria-label="Eventos">' + DB.eventos.map(function (x) { return '<button type="button" data-ev="' + esc(x.id) + '"' + (x.id === S.ev ? ' aria-current="true"' : '') + '><b>' + esc(x.n) + '</b><span class="mono">' + range(x) + '</span></button>'; }).join('') + '</div>' +
+    '<div class="ev-layout"><div class="ev-list" role="group" aria-label="Eventos">' + DB.eventos.map(function (x) { return '<a href="#eventos/' + esc(encodeURIComponent(x.id)) + '/resumen" data-evlink="' + esc(x.id) + '"' + (x.id === S.ev ? ' aria-current="true"' : '') + '><b>' + esc(x.n) + '</b><span class="mono">' + range(x) + '</span></a>'; }).join('') + '</div>' +
     '<div class="stack"><div class="evhead"><h2>' + esc(e.n) + '</h2><div class="meta"><span>' + esc(e.lugar) + '</span><span class="mono">' + range(e) + '</span>' + st('neutral', 'minus', esc(e.st)) + delBtn('eventos', e.id, 'el evento “' + e.n + '” junto con sus ' + list.length + ' documentos y sus recursos') + '</div></div>' + tb + '<div id="tabpanel" role="tabpanel" aria-labelledby="tab-' + S.tab + '" class="stack">' + body + '</div></div></div>';
 }
 /* Resumen de una fila de auditoría: qué fila y qué columnas cambiaron. */
@@ -589,11 +593,11 @@ function frame() {
   var main = S.dataErr ? errorBox(S.dataErr) : V[S.view]();
   var curBottom = S.view === 'miembros' ? 'cuenta' : S.view;
   return '<a class="skip" href="#view">Ir al contenido</a><header class="bar"><div class="bar-in"><span class="brand">Portal CE <small>Comité Ejecutivo</small></span>' +
-    '<nav class="nav-top" aria-label="Secciones">' + NAV.map(function (n) { return '<button type="button" class="' + (n[2] || '') + '" data-v="' + n[0] + '" data-nav="top"' + (S.view === n[0] ? ' aria-current="page"' : '') + '>' + n[1] + '</button>'; }).join('') + '</nav>' +
+    '<nav class="nav-top" aria-label="Secciones">' + NAV.map(function (n) { return '<a class="' + (n[2] || '') + '" href="#' + n[0] + '" data-nav="top" data-to="' + n[0] + '"' + (S.view === n[0] ? ' aria-current="page"' : '') + '>' + n[1] + '</a>'; }).join('') + '</nav>' +
     '<div class="who"><span class="who-name">' + esc(u.nombre || u.email) + ' <span class="muted">· ' + esc(ROLES[u.rol] || '') + '</span></span>' + themeBtn() +
     '<button class="iconbtn" type="button" data-act="logout">' + ic('out') + '<span class="lbl">Salir</span></button></div></div></header>' +
     '<main class="wrap" id="view">' + main + '</main>' +
-    '<nav class="tabbar" aria-label="Secciones">' + TABBAR.map(function (n) { return '<button type="button" data-v="' + n[0] + '" data-nav="bottom"' + (curBottom === n[0] ? ' aria-current="page"' : '') + '>' + ic(NAV_ICON[n[0]]) + '<span>' + n[1] + '</span></button>'; }).join('') + '</nav>';
+    '<nav class="tabbar" aria-label="Secciones">' + TABBAR.map(function (n) { return '<a href="#' + n[0] + '" data-nav="bottom" data-to="' + n[0] + '"' + (curBottom === n[0] ? ' aria-current="page"' : '') + '>' + ic(NAV_ICON[n[0]]) + '<span>' + n[1] + '</span></a>'; }).join('') + '</nav>';
 }
 /* Para devolver el foco al mismo control después de redibujar (teclado y lectores de pantalla). */
 function focusSel(el) {
@@ -649,13 +653,30 @@ function render() {
   paint(frame());
 }
 function keepScroll(fn) { var y = window.scrollY; fn(); window.scrollTo(0, y); }
+/* La dirección refleja dónde se está: #semana, #eventos/<id>/<pestaña>. Así una sección o un evento se puede
+   abrir en otra pestaña (Ctrl+clic, clic medio), compartir o volver con Atrás. */
+var TAB_IDS = ['resumen', 'docs', 'tareas', 'novs', 'recursos'];
+function hashFor() { return S.view === 'eventos' && S.ev ? 'eventos/' + encodeURIComponent(S.ev) + '/' + S.tab : S.view; }
+function applyHash() {
+  var h = (location.hash || '').slice(1).split('/'), v = h[0];
+  S.view = hasView(v) ? v : 'inicio';
+  if (S.view === 'eventos') {
+    if (h[1]) { try { S.ev = decodeURIComponent(h[1]); } catch (e) { } }
+    S.tab = TAB_IDS.indexOf(h[2]) > -1 ? h[2] : 'resumen';
+  }
+}
 /* Cambiar de sección deja una entrada en el historial: el botón Atrás del celular vuelve a la anterior. */
 function go(v) {
   S.view = hasView(v) ? v : 'inicio';
-  if (location.hash.slice(1) !== S.view) history.pushState(null, '', '#' + S.view);
+  if (location.hash.slice(1) !== hashFor()) history.pushState(null, '', '#' + hashFor());
   render(); window.scrollTo(0, 0);
 }
-window.addEventListener('popstate', function () { var h = location.hash.slice(1); if (hasView(h) && S.me) { S.view = h; render(); } });
+window.addEventListener('hashchange', function () {
+  if (!S.me) return;
+  var prev = S.view + S.ev + S.tab; applyHash();
+  if (S.view === 'eventos' && !evById(S.ev)) S.ev = DB.eventos.length ? DB.eventos[0].id : null;
+  if (prev !== S.view + S.ev + S.tab) { if (S.view !== 'eventos') S.f = { est: 'todos', rel: 'todos', g: 'todos' }; render(); window.scrollTo(0, 0); }
+});
 /* Salto al contenido: lleva el foco al área principal sin cambiar la dirección. */
 document.addEventListener('click', function (e) {
   var a = e.target.closest('a.skip'); if (!a) return;
@@ -675,7 +696,7 @@ document.addEventListener('click', async function (e) {
   var d = b.dataset;
   if (d.ev) { S.ev = d.ev; S.tab = d.go || 'resumen'; S.f = { est: d.fest || 'todos', rel: 'todos', g: 'todos' }; go('eventos'); return; }
   if (d.v) { go(d.v); return; }
-  if (d.tab) { S.tab = d.tab; render(); return; }
+  if (d.tab) { S.tab = d.tab; history.replaceState(null, '', '#' + hashFor()); render(); return; }
   if (d.f) { S.f[d.f] = d.fv; keepScroll(render); return; }
   if (d.tf) { S.tf = d.tf; render(); return; }
   if (d.wk != null) { S.wk = d.wk === '0' ? 0 : S.wk + (+d.wk); render(); return; }
@@ -871,19 +892,23 @@ document.addEventListener('change', async function (e) {
 });
 
 /* ---------- arranque ---------- */
+var bootedFor = null;
 if (configured) {
   sb.auth.onAuthStateChange(function (event, session) {
-    if (event === 'SIGNED_OUT') { DRAFTS = {}; S.session = null; S.me = null; S.setpw = false; S.needCode = false; S.needEnroll = false; S.enroll = null; S.loading = false; S.aal = 'aal1'; DB = emptyDB(); render(); return; }
+    if (event === 'SIGNED_OUT') { bootedFor = null; DRAFTS = {}; S.session = null; S.me = null; S.setpw = false; S.needCode = false; S.needEnroll = false; S.enroll = null; S.loading = false; S.aal = 'aal1'; DB = emptyDB(); render(); return; }
     /* Sesión guardada de hace más de 30 minutos sin uso: no se retoma. */
     if (session && !S.fresh && stale()) { setTimeout(idleLogout, 0); return; }
     if (S.fresh && session) { S.fresh = false; touch(); }
     if (event === 'PASSWORD_RECOVERY') S.setpw = true;
-    if (event === 'SIGNED_IN' && S.me && session && S.me.id === session.user.id && !S.setpw) return; /* volver a la pestaña no recarga todo */
+    /* supabase-js puede avisar SIGNED_IN e INITIAL_SESSION (en cualquier orden) para la misma sesión, y SIGNED_IN otra vez al volver a la pestaña:
+       si ya se está cargando o se cargó para esa cuenta, no se repite la carga. */
+    if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session && bootedFor === session.user.id && !S.setpw) return;
     if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY') {
       /* diferido: no se hacen llamadas a Supabase dentro del propio evento */
+      bootedFor = session ? session.user.id : null;
       setTimeout(function () { boot(session); }, 0);
     }
   });
-  var h = (location.hash || '').slice(1); if (hasView(h)) S.view = h;
+  applyHash();
 } else { S.loading = false; render(); }
 })();
