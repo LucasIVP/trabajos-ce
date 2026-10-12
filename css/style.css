@@ -45,6 +45,8 @@ html{-webkit-text-size-adjust:100%;scroll-padding-top:calc(var(--bar-h) + 12px);
 button,a,select,label,input{touch-action:manipulation;-webkit-tap-highlight-color:rgba(29,95,168,.14)}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.45;overflow-wrap:break-word}
 button,input,select,textarea{font:inherit;color:inherit}
+/* Los campos miden 16 px en cualquier ancho (no heredan los 13 px del label); con menos, iPhone acerca la página al tocarlos */
+input,select,textarea{font-size:16px}
 h1,h2,h3{font-family:var(--title);font-weight:600;margin:0;line-height:1.15;text-wrap:balance}
 h1{font-size:clamp(26px,4vw,40px);font-weight:700;letter-spacing:-.02em;line-height:1.05}
 h2{font-size:22px}
@@ -68,6 +70,7 @@ a{color:var(--primary)}
 .bar-in{padding:6px 16px;display:flex;align-items:center;gap:4px 8px;min-height:var(--bar-h)}
 .brand{display:flex;align-items:center;gap:10px;margin-right:auto;white-space:nowrap;font-family:var(--title);font-weight:600;font-size:19px;letter-spacing:-.01em;color:var(--ink);text-decoration:none}
 .logo{width:34px;height:34px;border-radius:10px;background:var(--primary);color:var(--on-primary);display:inline-flex;align-items:center;justify-content:center;font-family:var(--title);font-weight:700;font-size:15px;flex:none}
+.bar .logo{width:var(--tap);height:var(--tap);border-radius:11px;font-size:16px} /* el logo es un enlace: 44 × 44 en celular y tableta */
 .iconbtn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:var(--tap);min-height:var(--tap);padding:0 8px;background:none;border:1px solid transparent;border-radius:var(--r-ctl);cursor:pointer;color:var(--ink-2)}
 .iconbtn:hover{border-color:var(--control)}
 .iconbtn .lbl{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
@@ -85,6 +88,7 @@ a{color:var(--primary)}
   .side .brand{padding:0 8px;font-size:21px;margin:0}
   .side .logo{width:38px;height:38px;border-radius:11px;font-size:16px}
   .wrap{margin-left:calc(var(--side-w) + max(0px, (100vw - var(--side-w) - 1180px) / 2));padding:36px 44px 48px}
+  .wrap.auth-page{margin-left:auto} /* pantallas sin sesión: no hay barra lateral, se centran en toda la ventana */
 }
 .side-nav{display:flex;flex-direction:column;gap:4px}
 .side-nav .grp-l{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:0 12px 8px}
@@ -225,7 +229,7 @@ a{color:var(--primary)}
 /* ---------- Formularios ---------- */
 .form{display:grid;gap:12px}
 .form .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
-.form label{display:grid;gap:4px;font-size:13px;font-weight:500;color:var(--ink-2)}
+.form label{display:grid;grid-template-columns:minmax(0,1fr);min-width:0;gap:4px;font-size:13px;font-weight:500;color:var(--ink-2)}
 .form textarea,.form input[type=text],.form input[type=date],.form input[type=time],.form input[type=email],.form input[type=password],.form select{background:var(--surface);border:1px solid var(--control);border-radius:var(--r-ctl);padding:9px 12px;color:var(--ink);width:100%;font-weight:400}
 .form textarea{min-height:84px;resize:vertical}
 .form .check{display:flex;gap:8px;align-items:center;color:var(--ink);font-size:14px}
@@ -262,6 +266,8 @@ select{background:var(--surface);border:1px solid var(--control);border-radius:v
 .tabs button{background:none;border:0;border-bottom:3px solid transparent;padding:10px 14px;cursor:pointer;color:var(--ink-2);font-weight:500;white-space:nowrap}
 .tabs button[aria-selected="true"]{color:var(--primary);border-bottom-color:var(--primary);font-weight:600}
 .tbox{overflow-x:auto}
+.scroll-hint{display:none;padding:0 20px 10px}
+@media (max-width:767px){.scroll-hint{display:block}}
 table{border-collapse:collapse;width:100%;font-size:14px}
 th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
 th{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;white-space:nowrap;background:var(--surface-2)}

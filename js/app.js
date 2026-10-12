@@ -499,6 +499,8 @@ function auditRow(a) {
   }
   return '<tr><td class="mono">' + esc(fdt(a.momento)) + '</td><td>' + esc(memberName(a.usuario)) + ' <span class="muted">' + esc(a.rol || '') + '</span></td><td>' + esc(OPS[a.operacion] || a.operacion) + '</td><td class="mono">' + esc(a.tabla) + '</td><td>' + esc(what) + (cambios ? '<div class="note">Cambió: ' + esc(cambios) + '</div>' : '') + '</td></tr>';
 }
+/* Aviso de tabla ancha: solo se ve en celular (CSS); la caja se desplaza también con las flechas del teclado */
+function scrollHint() { return '<p class="note scroll-hint">Hay más columnas: deslizá la tabla</p>'; }
 function vMiembros() {
   return '<div class="head"><div><h1>Miembros</h1><p>Solo las cuentas invitadas pueden entrar. No hay registro abierto.</p></div></div>' +
     '<section class="panel rows" aria-label="Miembros">' + DB.members.map(function (m) {
@@ -514,9 +516,9 @@ function vMiembros() {
     '<div><button class="btn primary" type="submit">Enviar invitación</button></div></form>' +
     '<p class="note">La persona recibe un correo para crear su clave y configurar el segundo factor. Para dar de baja a alguien, borrarlo desde el panel de Supabase: Authentication, Users.</p></div></section>' +
     '<section class="panel" aria-labelledby="h-aud"><header><h2 id="h-aud">Registro de cambios</h2><span class="note">Últimos 50 · altas, cambios y borrados de todo el portal</span></header>' +
-    (DB.audit === null ? emptyIn('El registro de cambios no está disponible en la base.') : DB.audit.length ? '<div class="tbox"><table class="t-log"><thead><tr><th scope="col">Cuándo</th><th scope="col">Quién</th><th scope="col">Qué</th><th scope="col">Tabla</th><th scope="col">Detalle</th></tr></thead><tbody>' + DB.audit.map(auditRow).join('') + '</tbody></table></div>' : emptyIn('Todavía no hay cambios registrados.')) + '</section>' +
+    (DB.audit === null ? emptyIn('El registro de cambios no está disponible en la base.') : DB.audit.length ? scrollHint() + '<div class="tbox" tabindex="0" role="region" aria-label="Tabla del registro de cambios"><table class="t-log"><thead><tr><th scope="col">Cuándo</th><th scope="col">Quién</th><th scope="col">Qué</th><th scope="col">Tabla</th><th scope="col">Detalle</th></tr></thead><tbody>' + DB.audit.map(auditRow).join('') + '</tbody></table></div>' : emptyIn('Todavía no hay cambios registrados.')) + '</section>' +
     '<section class="panel" aria-labelledby="h-err"><header><h2 id="h-err">Errores de la página</h2><span class="note">Últimos 30 · sin datos de expedientes</span></header>' +
-    (DB.errs === null ? emptyIn('El registro de errores no está disponible en la base.') : DB.errs.length ? '<div class="tbox"><table class="t-log"><thead><tr><th scope="col">Cuándo</th><th scope="col">Quién</th><th scope="col">Vista</th><th scope="col">Mensaje</th></tr></thead><tbody>' + DB.errs.map(function (x) { return '<tr><td class="mono">' + esc(fdt(x.momento)) + '</td><td>' + esc(memberName(x.usuario)) + '</td><td class="mono">' + esc(x.vista) + '</td><td class="wrapw">' + esc(x.mensaje) + '<div class="note">' + esc(x.navegador) + '</div></td></tr>'; }).join('') + '</tbody></table></div>' : emptyIn('Sin errores registrados.')) + '</section>';
+    (DB.errs === null ? emptyIn('El registro de errores no está disponible en la base.') : DB.errs.length ? scrollHint() + '<div class="tbox" tabindex="0" role="region" aria-label="Tabla de errores de la página"><table class="t-log"><thead><tr><th scope="col">Cuándo</th><th scope="col">Quién</th><th scope="col">Vista</th><th scope="col">Mensaje</th></tr></thead><tbody>' + DB.errs.map(function (x) { return '<tr><td class="mono">' + esc(fdt(x.momento)) + '</td><td>' + esc(memberName(x.usuario)) + '</td><td class="mono">' + esc(x.vista) + '</td><td class="wrapw">' + esc(x.mensaje) + '<div class="note">' + esc(x.navegador) + '</div></td></tr>'; }).join('') + '</tbody></table></div>' : emptyIn('Sin errores registrados.')) + '</section>';
 }
 function enrollHTML() {
   if (!S.enroll) return '<button class="btn primary" type="button" data-act="mfa-on">Empezar</button>';
@@ -527,7 +529,7 @@ function enrollHTML() {
       '<form class="form" id="enrf"><label for="ec">Código de la app<input id="ec" type="text" inputmode="numeric" autocomplete="one-time-code" spellcheck="false" pattern="[0-9]{6}" maxlength="6" required></label>' +
       '<div class="chips"><button class="btn primary" type="submit">Confirmar y activar</button><button class="btn" type="button" data-act="mfa-cancel">Cancelar</button></div></form>';
 }
-function authWrap(inner, wide) { return '<main class="wrap"><div class="authtop">' + themeBtn() + '</div>' + inner + '</main>'; }
+function authWrap(inner, wide) { return '<main class="wrap auth-page"><div class="authtop">' + themeBtn() + '</div>' + inner + '</main>'; }
 function vEnrollGate() {
   var em = S.session && S.session.user ? S.session.user.email : '';
   return authWrap('<section class="panel auth wide"><h1 class="mark"><span class="logo" aria-hidden="true">CE</span>Portal CE</h1>' +
