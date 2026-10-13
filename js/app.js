@@ -293,23 +293,25 @@ function themeBtn(where) {
 /* Pendientes de hoy, calculados solo con datos ya cargados (sin consultas nuevas). */
 function attentionRows() {
   var today = ds(T0);
-  var tk = DB.tareas.filter(function (t) { return t.dia === today && t.estado !== 'Completadas'; }).length;
+  var PR = { alta: 0, media: 1, baja: 2 };
+  var hoy = DB.tareas.filter(function (t) { return t.dia === today && t.estado !== 'Completadas'; }).sort(function (a, b) { return (PR[a.prioridad] || 1) - (PR[b.prioridad] || 1); }), tk = hoy.length;
   var sinEv = {}, sin = 0;
   Object.keys(DB.docs).forEach(function (id) { var n = DB.docs[id].filter(function (d) { return docStat(d) === 'sin'; }).length; if (n) { sin += n; sinEv[id] = n; } });
   var evSin = Object.keys(sinEv)[0];
   var q = DB.novs.filter(function (n) { return n.qrx; }).length;
   var rows = [];
-  if (tk) rows.push({ icon: 'week', title: 'Tareas para hoy', n: tk, detail: tk === 1 ? 'sin completar' : 'sin completar', btn: '<a class="btn sm" href="#semana" data-to="semana">Ver semana</a>' });
-  if (sin) rows.push({ icon: 'alert', title: 'Documentos sin Síntesis', n: sin, detail: sin === 1 ? 'recibido, falta la Síntesis' : 'recibidos, falta la Síntesis', btn: '<a class="btn sm" href="#eventos/' + esc(encodeURIComponent(evSin)) + '/docs" data-evgo="' + esc(evSin) + '" data-fest="sin">Ver documentos</a>' });
+  /* Cada fila es un enlace entero; "go" es el texto de apoyo que dice adónde lleva. */
+  if (tk) rows.push({ icon: 'week', title: 'Tareas para hoy', n: tk, detail: 'sin completar: «' + esc(hoy[0].titulo) + '»' + (tk > 1 ? ' y ' + (tk - 1) + ' más' : ''), href: '#semana', attrs: ' data-to="semana"', go: 'Semana' });
+  if (sin) rows.push({ icon: 'alert', title: 'Documentos sin Síntesis', n: sin, detail: sin === 1 ? 'recibido, falta la Síntesis' : 'recibidos, falta la Síntesis', href: '#eventos/' + esc(encodeURIComponent(evSin)) + '/docs', attrs: ' data-evgo="' + esc(evSin) + '" data-fest="sin"', go: 'Eventos' });
   var rv = DB.reservas.length;
-  if (rv) rows.push({ icon: 'folder', title: 'Fojas reservadas sin link', n: rv, detail: rv === 1 ? 'falta subir el archivo o cancelar la reserva' : 'falta subir los archivos o cancelar las reservas', btn: '<a class="btn sm" href="#expedientes/' + esc(encodeURIComponent(DB.reservas[0].expediente)) + '" data-to="expedientes">Ver expediente</a>' });
-  if (q) rows.push({ icon: 'clock', title: 'Novedades en espera (Qrx)', n: q, detail: 'esperando respuesta', btn: '<a class="btn sm" href="#novedades" data-to="novedades">Ver novedades</a>' });
+  if (rv) rows.push({ icon: 'folder', title: 'Fojas reservadas sin link', n: rv, detail: rv === 1 ? 'falta subir el archivo o cancelar la reserva' : 'falta subir los archivos o cancelar las reservas', href: '#expedientes/' + esc(encodeURIComponent(DB.reservas[0].expediente)), attrs: ' data-to="expedientes"', go: 'Expediente' });
+  if (q) rows.push({ icon: 'clock', title: 'Novedades en espera (Qrx)', n: q, detail: 'esperando respuesta', href: '#novedades', attrs: ' data-to="novedades"', go: 'Novedades' });
   return rows;
 }
 function attention(rows) {
   var total = rows.reduce(function (a, r) { return a + r.n; }, 0);
   return '<section class="panel" aria-labelledby="h-attn"><header><h2 id="h-attn">Requiere atención hoy</h2>' + (total ? '<span class="pill-count"><span class="sr-only">Pendientes: </span>' + total + '</span>' : '') + '</header>' +
-    (rows.length ? '<div class="rows">' + rows.map(function (r) { return '<div class="attn-row"><span class="ibox">' + ic(r.icon) + '</span><span class="txt"><b>' + r.title + '</b><span><span class="num">' + r.n + '</span> ' + r.detail + '</span></span>' + r.btn + '</div>'; }).join('') + '</div>'
+    (rows.length ? '<div class="rows">' + rows.map(function (r) { return '<a class="attn-row" href="' + r.href + '"' + r.attrs + '><span class="ibox">' + ic(r.icon) + '</span><span class="txt"><b>' + r.title + '</b><span><span class="num">' + r.n + '</span> ' + r.detail + '</span></span><span class="go">' + r.go + '</span></a>'; }).join('') + '</div>'
       : '<div class="attn-ok">' + ic('check') + '<span>Nada pendiente para hoy.</span></div>') + '</section>';
 }
 /* Barra de avance de la tarjeta azul: tres tramos con separación; el tamaño de cada uno (flex-grow) se fija al dibujar. */
@@ -332,28 +334,28 @@ function activeEvent(cur) {
 function vInicio() {
   var next = DB.eventos.filter(function (e) { return days(e.hasta) >= 0; }).sort(function (a, b) { return a.desde < b.desde ? -1 : 1; });
   var q = DB.novs.filter(function (n) { return n.qrx; });
-  var m0 = ds(monday(0)), m1 = ds(addD(monday(0), 6));
-  var wk = DB.tareas.filter(function (t) { return t.dia && t.dia >= m0 && t.dia <= m1 && t.estado !== 'Completadas'; }).sort(function (a, b) { return a.dia < b.dia ? -1 : 1; }).slice(0, 6);
   var name = S.me.nombre || S.me.email;
   var otros = next.slice(1, 4), rows = attentionRows();
   var total = rows.reduce(function (a, r) { return a + r.n; }, 0);
   return '<div class="head hello"><div><p class="kicker">' + DIAS[T0.getDay()] + ' ' + fm(ds(T0)) + '</p><h1>Buen día, ' + esc(name) + '</h1></div>' +
     '<p class="summary">' + (total ? 'Hoy hay <b>' + total + '</b> ' + (total === 1 ? 'pendiente' : 'pendientes') + ' para resolver.' : 'No hay pendientes para hoy.') + '</p></div>' +
-    '<div class="grid2">' + activeEvent(next[0]) + attention(rows) + '</div>' +
-    '<div class="grid2"><section class="panel" aria-labelledby="h-wk"><header><h2 id="h-wk">Esta semana, por hacer</h2><a class="btn sm" href="#semana" data-to="semana">Abrir semana</a></header><div class="body">' +
-    (wk.length ? wk.map(taskHTML).join('') : emptyIn('No hay tareas pendientes esta semana.')) + '</div></section>' +
-    '<div class="stack">' +
-    '<section class="panel" aria-labelledby="h-qrx"><header><h2 id="h-qrx">En espera (Qrx)</h2>' + st('warn', 'clock', String(q.length)) + '</header>' +
+    '<div class="grid2 top">' + attention(rows) + activeEvent(next[0]) + '</div>' +
+    '<div class="grid2 top">' +
+    '<section class="panel qrx" aria-labelledby="h-qrx"><header><h2 id="h-qrx">En espera (Qrx)</h2>' + st('warn', 'clock', String(q.length)) + '</header>' +
     (q.length ? '<div class="rows">' + q.map(function (n) { return '<div class="evlist-row"><div>' + adLink(n.ad) + ' <span class="mono muted">' + fm(n.fecha) + '</span><p class="wrapw">' + esc(n.texto) + '</p></div></div>'; }).join('') + '</div>' : '<div class="body">' + emptyIn('Nada en espera.') + '</div>') + '</section>' +
     (otros.length ? '<section class="panel" aria-labelledby="h-next"><header><h2 id="h-next">Próximos eventos</h2></header><div class="rows">' + otros.map(function (e) { return '<div class="evlist-row"><div><b>' + esc(e.n) + '</b><p class="note mono">' + range(e) + '</p></div><a class="btn sm" href="#eventos/' + esc(encodeURIComponent(e.id)) + '/resumen" data-evgo="' + esc(e.id) + '">Abrir<span class="sr-only"> ' + esc(e.n) + '</span></a></div>'; }).join('') + '</div></section>' : '') +
-    '</div></div>';
+    '</div>';
 }
 function vSemana() {
   var base = monday(S.wk), names = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'], tds = ds(T0);
-  var cols = names.map(function (nm, i) {
-    var d = addD(base, i), k = ds(d), list = DB.tareas.filter(function (t) { return t.dia === k && (S.tf === 'todas' || t.prioridad === 'alta'); });
-    return '<section class="day' + (k === tds ? ' today' : '') + '" aria-label="' + nm + ' ' + fms(k) + (k === tds ? ', hoy' : '') + '"><header><h3>' + nm + '</h3><span class="dn">' + fms(k) + (k === tds ? ' · Hoy' : '') + '</span></header>' + (list.length ? list.map(taskHTML).join('') : '<p class="empty">Libre</p>') + '</section>';
+  /* Lista por día: los días sin tareas se juntan en una línea; hoy siempre tiene su fila, aunque esté libre. */
+  var libres = [], rows = names.map(function (nm, i) {
+    var k = ds(addD(base, i)), hoy = k === tds, list = DB.tareas.filter(function (t) { return t.dia === k && (S.tf === 'todas' || t.prioridad === 'alta'); });
+    if (!list.length && !hoy) { libres.push('<b>' + nm.slice(0, 3) + ' <span class="mono">' + fms(k) + '</span></b>'); return ''; }
+    return '<section class="dayrow' + (hoy ? ' today' : '') + '" aria-labelledby="h-d' + i + '"><h3 id="h-d' + i + '">' + nm + ' <span class="dn">' + fms(k) + '</span>' + (hoy ? ' <span class="st st-strong">Hoy</span>' : '') + '</h3>' +
+      '<div class="daytasks">' + (list.length ? list.map(taskHTML).join('') : '<p class="empty">' + (S.tf === 'alta' ? 'Sin tareas de prioridad alta.' : 'Sin tareas.') + '</p>') + '</div></section>';
   }).join('');
+  var free = libres.length ? '<p class="libres">' + (S.tf === 'alta' ? 'Sin tareas de prioridad alta: ' : 'Sin tareas: ') + libres.join(' · ') + '</p>' : '';
   var sin = DB.tareas.filter(function (t) { return !t.dia; }), end = addD(base, 6);
   var form = '<section class="panel edit" aria-labelledby="h-nt"><header><h2 id="h-nt">Nueva tarea</h2><span class="note">Se guarda para todo el equipo</span></header><div class="body form">' +
     '<label for="tn">Tarea<input id="tn" type="text" maxlength="300" autocomplete="off" placeholder="Qué hay que hacer…"></label>' +
@@ -362,9 +364,11 @@ function vSemana() {
     '<label for="tp">Prioridad<select id="tp"><option value="alta">Alta</option><option value="media" selected>Media</option><option value="baja">Baja</option></select></label></div>' +
     '<div><button class="btn primary" type="button" data-act="addtask">Agregar tarea</button></div></div></section>';
   return '<div class="head"><div><h1>Semana de trabajo</h1><p>Del <span class="mono">' + fm(ds(base)) + '</span> al <span class="mono">' + fm(ds(end)) + '</span>.</p></div>' +
-    '<div class="chips"><button class="btn" type="button" data-wk="-1">Semana anterior</button><button class="btn" type="button" data-wk="0">Esta semana</button><button class="btn" type="button" data-wk="1">Semana siguiente</button></div></div>' +
-    '<div class="chips"><span class="gl">Mostrar</span><button class="chip" data-tf="todas" aria-pressed="' + (S.tf === 'todas') + '" type="button">Todas</button><button class="chip" data-tf="alta" aria-pressed="' + (S.tf === 'alta') + '" type="button">Solo prioridad alta</button></div>' +
-    '<div class="board">' + cols + '</div>' +
+    '</div>' +
+    '<section class="panel week" aria-label="Tareas de la semana"><div class="tools">' +
+    '<div class="seg" role="group" aria-label="Cambiar de semana"><button type="button" data-wk="-1">Anterior</button><button type="button" data-wk="0"' + (S.wk === 0 ? ' aria-current="true"' : '') + '>Esta semana</button><button type="button" data-wk="1">Siguiente</button></div>' +
+    '<div class="chips" role="group" aria-label="Mostrar"><span class="gl" aria-hidden="true">Mostrar</span><button class="chip" data-tf="todas" aria-pressed="' + (S.tf === 'todas') + '" type="button">Todas</button><button class="chip" data-tf="alta" aria-pressed="' + (S.tf === 'alta') + '" type="button">Solo prioridad alta</button></div></div>' +
+    free + rows + '</section>' +
     '<section class="panel" aria-labelledby="h-sd"><header><h2 id="h-sd">Sin día asignado</h2></header><div class="body">' + (sin.length ? sin.map(taskHTML).join('') : emptyIn('Todas las tareas tienen día.')) + '</div></section>' + form;
 }
 
