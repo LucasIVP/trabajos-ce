@@ -79,7 +79,7 @@ if (configured) {
 /* Datos cargados desde la base */
 function emptyDB() { return { reservas: [], eventos: [], exp: {}, expList: [], docs: {}, tareas: [], novs: [], recursos: [], members: [], audit: [], errs: [] }; }
 var DB = emptyDB();
-var S = { exp: null, expMode: 'msg', expFilter: 'todo', expQuery: '', reserva: {}, fojas: {}, fojasOK: null, me: null, session: null, noRole: false, setpw: false, loading: true, err: '', dataErr: '', connErr: false, aal: 'aal1', needCode: false, needEnroll: false, factors: [], enroll: null, fresh: false, view: 'inicio', ev: null, tab: 'resumen', dq: '', dn: 25, fopen: false, f: { est: 'todos', rel: 'todos', g: 'todos' }, tf: 'todas', wk: 0, cal: null };
+var S = { exp: null, expMode: 'msg', expFilter: 'todo', expQuery: '', reserva: {}, fojas: {}, fojasOK: null, me: null, session: null, noRole: false, setpw: false, loading: true, err: '', dataErr: '', connErr: false, aal: 'aal1', needCode: false, needEnroll: false, factors: [], enroll: null, fresh: false, view: 'inicio', ev: null, tab: 'resumen', dq: '', dn: 25, nform: false, nbq: '', nbad: 'todos', nbf: 'todas', nbqrx: false, fopen: false, f: { est: 'todos', rel: 'todos', g: 'todos' }, tf: 'todas', wk: 0, cal: null };
 
 /* Un enlace de invitación o de recuperación trae su tipo en la dirección */
 if (/type=(invite|recovery)/.test(location.hash)) S.setpw = true;
@@ -410,7 +410,7 @@ function vSemana() {
     '<div class="row"><label for="tad">Expediente<select id="tad"><option value="">Sin expediente</option>' + expOptions() + '</select></label>' +
     '<label for="td">Día<input id="td" type="date" value="' + ds(T0) + '"></label>' +
     '<label for="tp">Prioridad<select id="tp"><option value="alta">Alta</option><option value="media" selected>Media</option><option value="baja">Baja</option></select></label></div>' +
-    '<div><button class="btn primary" type="button" data-act="addtask">Agregar tarea</button></div></div></section>';
+    '<div><button class="btn primary" type="button" data-act="addtask">Guardar tarea</button></div></div></section>';
   return '<div class="head"><div><h1>Semana de trabajo</h1><p>Del <span class="mono">' + fm(ds(base)) + '</span> al <span class="mono">' + fm(ds(end)) + '</span>.</p></div>' +
     '</div>' +
     '<section class="panel week" aria-label="Tareas de la semana"><div class="tools">' +
@@ -462,17 +462,45 @@ function calPanel() {
     '<div><div class="note">Avisos</div>' + rem + '</div></div>';
   return '<section class="panel cal edit">' + head + '<div class="body cal-grid"><div>' + form + '</div><div class="stack"><div id="calprev">' + calPrev() + '</div><div><button class="btn primary" type="button" disabled>Crear evento y enviar invitaciones</button><p class="note">Todavía no crea nada en Google Calendar. Hasta entonces, cargá el evento a mano con estos datos.</p></div></div></div></section>';
 }
+/* Novedades: filtro por texto, expediente, período y Qrx. El período se compara como texto aaaa-mm-dd (hora argentina). */
+var NOV_PERIODOS = [['todas', 'Todas'], ['7', 'Últimos 7 días'], ['30', 'Últimos 30 días']];
+function novFiltered() {
+  var q = S.nbq.trim().toLocaleLowerCase('es-AR'), desde = S.nbf === 'todas' ? '' : ds(addD(T0, -(+S.nbf)));
+  return DB.novs.filter(function (n) {
+    if (S.nbad !== 'todos' && n.ad !== S.nbad) return false;
+    if (S.nbqrx && !n.qrx) return false;
+    if (desde && String(n.fecha) < desde) return false;
+    if (q && ((n.texto || '') + ' ' + (n.autor || '') + ' ' + (n.ad || '') + ' ' + (DB.exp[n.ad] || '')).toLocaleLowerCase('es-AR').indexOf(q) < 0) return false;
+    return true;
+  });
+}
+function novListHTML() {
+  var list = novFiltered(), g = {}, order = [];
+  list.forEach(function (n) { if (!g[n.ad]) { g[n.ad] = []; order.push(n.ad); } g[n.ad].push(n); });
+  var count = '<p class="note" role="status">Mostrando ' + list.length + ' de ' + DB.novs.length + (DB.novs.length === 1 ? ' novedad' : ' novedades') + '</p>';
+  if (!DB.novs.length) return empty('Todavía no hay novedades.');
+  if (!list.length) return count + empty('Ninguna novedad coincide con los filtros.');
+  return count + order.map(function (ad) { return '<section class="grp"><h3>' + adLink(ad) + ' <small>' + esc(DB.exp[ad] || '') + '</small></h3>' + g[ad].map(novHTML).join('') + '</section>'; }).join('');
+}
+function novFilters() {
+  var ads = []; DB.novs.forEach(function (n) { if (ads.indexOf(n.ad) < 0) ads.push(n.ad); });
+  return '<section class="panel" aria-labelledby="h-nb"><header><h2 id="h-nb">Buscar novedades</h2></header><div class="body form">' +
+    '<label for="nbq">Texto, autor o expediente<input id="nbq" type="search" value="' + esc(S.nbq) + '" maxlength="80" autocomplete="off"></label>' +
+    '<div class="row"><label for="nbad">Expediente<select id="nbad"><option value="todos">Todos</option>' + ads.map(function (ad) { return '<option value="' + esc(ad) + '" translate="no"' + (S.nbad === ad ? ' selected' : '') + '>#' + esc(ad) + ' ' + esc(DB.exp[ad] || '') + '</option>'; }).join('') + '</select></label>' +
+    '<label for="nbf">Período<select id="nbf">' + NOV_PERIODOS.map(function (o) { return '<option value="' + o[0] + '"' + (S.nbf === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label></div>' +
+    '<div class="chips"><button class="chip" type="button" data-nbqrx="1" aria-pressed="' + S.nbqrx + '">En espera (Qrx)</button></div></div></section>';
+}
 function vNov() {
-  var g = {}, order = [];
-  DB.novs.forEach(function (n) { if (!g[n.ad]) { g[n.ad] = []; order.push(n.ad); } g[n.ad].push(n); });
-  var form = '<section class="panel edit" aria-labelledby="h-cn"><header><h2 id="h-cn">Cargar novedad</h2><span class="note">Se guarda para todo el equipo</span></header><div class="body form">' +
+  /* En celular el formulario está plegado detrás de «Cargar novedad»; en escritorio queda a la vista (la clase solo pliega en pantallas angostas). */
+  var form = '<div class="fold-bar edit"><button class="btn primary fold-btn" type="button" data-nform="1" aria-expanded="' + S.nform + '" aria-controls="pnform">Cargar novedad</button></div>' +
+    '<section id="pnform" class="panel edit' + (S.nform ? '' : ' fold-closed') + '" aria-labelledby="h-cn"><header><h2 id="h-cn">Cargar novedad</h2><span class="note">Se guarda para todo el equipo</span></header><div class="body form">' +
     '<label for="nt">Novedad<textarea id="nt" maxlength="2000" autocomplete="off" placeholder="Qué pasó… Ej.: se envió la confirmación de preferencia"></textarea></label>' +
     '<div class="row"><label for="nad">Expediente<select id="nad">' + expOptions() + '</select></label>' +
     '<label for="nf">Fecha<input id="nf" type="date" value="' + ds(T0) + '"></label><label for="ni">Iniciales<input id="ni" type="text" value="' + esc(S.me.iniciales) + '" maxlength="6" autocomplete="off" spellcheck="false" autocapitalize="characters"></label></div>' +
     '<div class="chips"><label class="check"><input type="checkbox" id="nq"> Queda en espera (Qrx)</label><label class="check"><input type="checkbox" id="ntk"> Crear también una tarea</label></div>' +
     '<div><button class="btn primary" type="button" data-act="addnov">Guardar novedad</button></div></div></section>';
   return '<div class="head"><div><h1>Novedades</h1><p>Novedades por expediente, de la más reciente a la más antigua.</p></div><div class="chips"><a class="btn" href="#expedientes" data-to="expedientes">' + ic('folder', true) + 'Expedientes</a><button class="btn edit" type="button" data-cal="new">Preparar evento de Calendar</button></div></div>' + calPanel() + form +
-    (order.length ? order.map(function (ad) { return '<section class="grp"><h3>' + adLink(ad) + ' <small>' + esc(DB.exp[ad] || '') + '</small></h3>' + g[ad].map(novHTML).join('') + '</section>'; }).join('') : empty('Todavía no hay novedades.'));
+    (DB.novs.length ? novFilters() : '') + '<div id="nlist" class="stack">' + novListHTML() + '</div>';
 }
 function docActions(d) {
   var lleva = d.lleva_sintesis !== false, id = esc(d.id);
@@ -953,6 +981,12 @@ document.addEventListener('click', async function (e) {
   if (d.v) { go(d.v); return; }
   if (d.tab) { S.tab = d.tab; resetDocs(); history.replaceState(null, '', '#' + hashFor()); render(); return; }
   if (d.f) { S.f[d.f] = d.fv; S.dn = PAGE_DOCS; keepScroll(render); return; }
+  if (d.nform) {
+    S.nform = !S.nform; keepScroll(render);
+    if (S.nform) { var nt0 = $('#nt'); if (nt0) nt0.focus(); }
+    return;
+  }
+  if (d.nbqrx) { S.nbqrx = !S.nbqrx; keepScroll(render); return; }
   if (d.fopen) { S.fopen = !S.fopen; keepScroll(render); return; }
   if (d.more) { S.dn += PAGE_DOCS; var dl = $('#dlist'), ev0 = evById(S.ev); if (dl && ev0) { var y4 = window.scrollY; dl.innerHTML = docsListHTML(DB.docs[ev0.id] || []); window.scrollTo(0, y4); var nx = dl.querySelector('.dcard:nth-child(' + (S.dn - PAGE_DOCS + 1) + '), tbody tr:nth-child(' + (S.dn - PAGE_DOCS + 1) + ')'); var fl = nx && nx.querySelector('a,button'); if (fl) fl.focus({ preventScroll: true }); } return; }
   if (d.tf) { S.tf = d.tf; render(); return; }
@@ -1067,6 +1101,7 @@ async function act(a) {
     }
     toast(withTask ? 'Novedad y tarea guardadas' : 'Novedad guardada');
     clearDrafts(['nt', 'nad', 'nf', 'ni', 'nq', 'ntk']);
+    S.nform = false;
     await reload();
     return;
   }
@@ -1202,6 +1237,7 @@ document.addEventListener('input', function (e) {
   var t = e.target;
   clearFieldErr(t);
   if (t.id === 'np') { var l = $('#pwreq'); if (l) l.innerHTML = pwReqHTML(t.value); return; }
+  if (t.id === 'nbq') { S.nbq = t.value; var nl = $('#nlist'); if (nl) nl.innerHTML = novListHTML(); return; }
   if (t.id === 'dq') { S.dq = t.value; S.dn = PAGE_DOCS; var dl2 = $('#dlist'), ev1 = evById(S.ev); if (dl2 && ev1) dl2.innerHTML = docsListHTML(DB.docs[ev1.id] || []); return; }
   if (t.id === 'exq') { S.expQuery = t.value; var xl = $('#exlist'); if (xl) xl.innerHTML = expListRows(); return; }
   if (!S.cal) return;
@@ -1210,6 +1246,8 @@ document.addEventListener('input', function (e) {
 });
 document.addEventListener('change', async function (e) {
   var t = e.target;
+  if (t.id === 'nbad') { S.nbad = t.value; keepScroll(render); return; }
+  if (t.id === 'nbf') { S.nbf = t.value; keepScroll(render); return; }
   if (t.id === 'evsel') { resetDocs(); S.ev = t.value; S.tab = 'resumen'; go('eventos'); return; }
   if (t.dataset && t.dataset.rol && isAdmin()) {
     t.disabled = true;

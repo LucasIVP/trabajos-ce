@@ -440,3 +440,9 @@ a.mono.adlink{color:var(--primary)}
 @media (hover:hover){.mi:hover{background:var(--surface-2)}.menu-btn:hover{border-color:var(--primary)}}
 .evtop{display:flex;justify-content:space-between;align-items:center;gap:12px}
 .evtop h2{min-width:0;overflow-wrap:anywhere}
+
+/* ---------- Novedades: formulario plegado solo en celular ---------- */
+.fold-bar{display:none}
+@media (max-width:767px){.fold-bar{display:block}.fold-closed{display:none}}
+.form input[type=search]{background:var(--surface);border:1px solid var(--control);border-radius:var(--r-ctl);padding:9px 12px;color:var(--ink);width:100%;font-weight:400}
+@media (max-width:1023px){.form input[type=search]{min-height:var(--tap)}}
