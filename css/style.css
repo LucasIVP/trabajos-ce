@@ -428,3 +428,15 @@ a.mono.adlink{color:var(--primary)}
 .dlg-actions{display:flex;flex-direction:column-reverse;gap:8px}
 .dlg-actions .btn{width:100%;min-height:var(--tap);justify-content:center}
 @media (min-width:600px){.dlg-actions{flex-direction:row;justify-content:flex-end}.dlg-actions .btn{width:auto}}
+
+/* ---------- Menú «Más acciones» ---------- */
+.menu-wrap{display:inline-flex}
+.menu-btn{width:var(--tap);height:var(--tap);padding:0;border:1px solid var(--line);background:var(--surface);border-radius:var(--r-ctl);flex:none}
+.menu{position:fixed;left:0;top:0;z-index:50;min-width:200px;max-width:calc(100vw - 16px);background:var(--surface);border:1px solid var(--line);border-radius:var(--r-row);overflow:hidden}
+.menu[hidden]{display:none}
+.mi{display:flex;align-items:center;width:100%;min-height:var(--tap);padding:0 16px;background:none;border:0;text-align:left;cursor:pointer;color:var(--ink);font-size:14.5px;font-weight:500}
+.mi:focus-visible{outline-offset:-3px;background:var(--surface-2)}
+.mi.danger{color:var(--danger);border-top:1px solid var(--line)}
+@media (hover:hover){.mi:hover{background:var(--surface-2)}.menu-btn:hover{border-color:var(--primary)}}
+.evtop{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.evtop h2{min-width:0;overflow-wrap:anywhere}

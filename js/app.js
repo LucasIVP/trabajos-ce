@@ -238,6 +238,7 @@ var ICONS = {
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>',
   users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c1-3.5 3.5-5.5 6.5-5.5s5.5 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5c2 .6 3.3 2.4 4 5.5"/>',
   check: '<path d="m5 12.5 4.5 4.5L19 7"/>',
+  more: '<circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/>',
   alert: '<path d="M12 3.5 2.5 20h19z"/><path d="M12 10v4.5M12 17.2v.3"/>',
   clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
   minus: '<circle cx="12" cy="12" r="8.5"/><path d="M8 12h8"/>',
@@ -279,7 +280,17 @@ function countdown(e) {
 /* Borrar: tareas y novedades, edición y admin; el resto, solo admin (lo mismo que exigen las reglas de la base). */
 var DEL_CLS = { tareas: 'edit', novedades: 'edit', documentos: 'adm', recursos: 'adm', eventos: 'adm' };
 var DEL_ACC = { tareas: 'Borrar tarea', novedades: 'Borrar novedad', documentos: 'Borrar documento', recursos: 'Borrar recurso', eventos: 'Borrar evento' };
-function delBtn(tabla, id, que, accion) { return '<button type="button" class="btn sm danger ' + DEL_CLS[tabla] + '" data-del="' + tabla + '" data-id="' + esc(id) + '" data-que="' + esc(que) + '" data-acc="' + esc(accion || DEL_ACC[tabla]) + '">Borrar</button>'; }
+/* Menú «Más acciones»: una acción principal visible por fila y el resto acá. Solo se dibujan los ítems que el rol puede usar
+   (la base aplica los permisos reales); si no queda ninguno, no se dibuja el botón. Los ítems llevan los mismos data-* que antes,
+   así que las acciones existentes siguen funcionando. */
+function canDo(need) { var r = uiRole(); return need === 'adm' ? r === 'admin' : r !== 'lectura'; }
+function delItem(tabla, id, que, accion) { return { txt: 'Borrar…', need: DEL_CLS[tabla] === 'adm' ? 'adm' : 'edit', danger: true, attrs: 'data-del="' + tabla + '" data-id="' + esc(id) + '" data-que="' + esc(que) + '" data-acc="' + esc(accion || DEL_ACC[tabla]) + '"' }; }
+function moreMenu(label, items) {
+  var ok = items.filter(function (i) { return canDo(i.need); }); if (!ok.length) return '';
+  var l = esc('Más acciones: ' + label);
+  return '<span class="menu-wrap"><button type="button" class="iconbtn menu-btn" data-mnk="' + esc(label) + '" aria-haspopup="menu" aria-expanded="false" aria-label="' + l + '">' + ic('more') + '</button>' +
+    '<div class="menu" role="menu" aria-label="' + l + '" hidden>' + ok.map(function (i) { return '<button type="button" role="menuitem" tabindex="-1" class="mi' + (i.danger ? ' danger' : '') + '" ' + i.attrs + '>' + esc(i.txt) + '</button>'; }).join('') + '</div></span>';
+}
 var NEXT = { 'Pendiente': ['Empezar', 'En Proceso'], 'En Proceso': ['Completar', 'Completadas'], 'Completadas': ['Reabrir', 'Pendiente'] };
 function taskHTML(t) {
   var p = ['alta', 'media', 'baja'].indexOf(t.prioridad) > -1 ? t.prioridad : 'media';
@@ -287,14 +298,14 @@ function taskHTML(t) {
   return '<div class="tk ' + p + (t.estado === 'Completadas' ? ' done' : '') + '"><div class="t">' + esc(t.titulo) + '</div><div class="m">' + (t.ad ? adLink(t.ad, 'mono') : '<span>Sin expediente</span>') +
     (p === 'alta' ? st('warn', 'alert', 'Prioridad alta') : '') +
     (t.estado === 'En Proceso' ? st('neutral', 'clock', 'En proceso') : '') + (t.estado === 'Completadas' ? st('ok', 'check', 'Hecha') : '') +
-    '<button type="button" class="btn sm edit" data-tk="' + esc(t.id) + '">' + nx[0] + '</button>' + delBtn('tareas', t.id, 'la tarea “' + t.titulo + '”') + '</div></div>';
+    '<button type="button" class="btn sm edit" data-tk="' + esc(t.id) + '">' + nx[0] + '</button>' + moreMenu(t.titulo, [delItem('tareas', t.id, 'la tarea “' + t.titulo + '”')]) + '</div></div>';
 }
 function novHTML(n) {
   var i = DB.novs.indexOf(n);
   return '<div class="nv"><div class="dt mono">' + fm(n.fecha) + '</div><div class="stack-s"><p>' + esc(n.texto) + '</p><div class="m"><span>' + esc(n.autor) + '</span>' +
     (n.qrx ? st('warn', 'clock', 'En espera (Qrx)') : '') +
     (n.cal ? '<button class="btn sm edit" type="button" data-cal="from" data-nv="' + i + '">Preparar evento de Calendar</button>' : '') +
-    delBtn('novedades', n.id, 'la novedad del ' + fm(n.fecha) + ' (#' + n.ad + ')') + '</div></div></div>';
+    moreMenu('novedad del ' + fm(n.fecha) + ' (#' + n.ad + ')', [delItem('novedades', n.id, 'la novedad del ' + fm(n.fecha) + ' (#' + n.ad + ')')]) + '</div></div></div>';
 }
 function expOptions() { return DB.expList.map(function (x) { return '<option value="' + esc(x.ad) + '" translate="no">#' + esc(x.ad) + ' ' + esc(x.nombre) + '</option>'; }).join(''); }
 /* Estados de vista con el mismo estilo en todas las pantallas */
@@ -464,10 +475,14 @@ function vNov() {
     (order.length ? order.map(function (ad) { return '<section class="grp"><h3>' + adLink(ad) + ' <small>' + esc(DB.exp[ad] || '') + '</small></h3>' + g[ad].map(novHTML).join('') + '</section>'; }).join('') : empty('Todavía no hay novedades.'));
 }
 function docActions(d) {
-  var lleva = d.lleva_sintesis !== false;
-  var act = !d.recibido ? '<button class="btn sm" type="button" data-doc="' + esc(d.id) + '" data-do="r">Marcar recibido</button>' : !d.sintesis && lleva ? '<button class="btn sm" type="button" data-doc="' + esc(d.id) + '" data-do="s">Marcar Síntesis lista</button>' : '';
-  if (!d.sintesis) act += '<button class="btn sm adm" type="button" data-doc="' + esc(d.id) + '" data-do="' + (lleva ? 'n">No lleva Síntesis' : 'l">Sí lleva Síntesis') + '</button>';
-  return act ? '<div class="cell-actions edit">' + act + '</div>' : '';
+  var lleva = d.lleva_sintesis !== false, id = esc(d.id);
+  var act = '';
+  if (canDo('edit')) act = !d.recibido ? '<button class="btn sm" type="button" data-doc="' + id + '" data-do="r">Marcar recibido</button>' : !d.sintesis && lleva ? '<button class="btn sm" type="button" data-doc="' + id + '" data-do="s">Marcar Síntesis lista</button>' : '';
+  var items = [];
+  if (!d.sintesis) items.push({ txt: lleva ? 'No lleva Síntesis' : 'Sí lleva Síntesis', need: 'adm', attrs: 'data-doc="' + id + '" data-do="' + (lleva ? 'n' : 'l') + '"' });
+  items.push(delItem('documentos', d.id, 'el documento ' + d.codigo));
+  act += moreMenu(d.codigo, items);
+  return act ? '<div class="cell-actions">' + act + '</div>' : '';
 }
 function docLinks(d) {
   var lleva = d.lleva_sintesis !== false;
@@ -499,14 +514,13 @@ function docsListHTML(list) {
       var l = docLinks(d);
       return '<article class="dcard"><div class="top"><span class="code" translate="no">' + esc(d.codigo) + '</span><span class="note mono">' + esc(d.punto) + '</span></div><p>' + esc(d.asunto) + '</p>' +
         '<div class="chips">' + docChip(d) + relChip(d.relevancia) + (d.recibido && d.idioma ? '<span class="note mono">' + esc(d.idioma) + '</span>' : '') + '</div>' +
-        '<div class="links">' + l[0] + (l[1] ? ' ' + l[1] : '') + '</div>' + docActions(d) + '<div>' + delBtn('documentos', d.id, 'el documento ' + d.codigo) + '</div></article>';
+        '<div class="links">' + l[0] + (l[1] ? ' ' + l[1] : '') + '</div>' + docActions(d) + '</article>';
     }).join('') + '</div>' + more;
   }
   return count + '<div class="panel tbox"><table class="t-wide"><thead><tr><th scope="col">Punto</th><th scope="col">Documento</th><th scope="col">Asunto</th><th scope="col">Relevancia</th><th scope="col">Idioma</th><th scope="col">Estado</th><th scope="col">Archivos</th></tr></thead><tbody>' +
     shown.map(function (d) {
       var l = docLinks(d);
-      /* Borrar va al final de la celda de Estado, después de las acciones de estado (la tanda 4 lo pasa al menú). */
-      return '<tr><td class="mono muted">' + esc(d.punto) + '</td><td class="code" translate="no">' + esc(d.codigo) + '</td><td class="asunto">' + esc(d.asunto) + '</td><td>' + relChip(d.relevancia, true) + '</td><td class="mono">' + (d.recibido ? esc(d.idioma || '—') : '—') + '</td><td>' + docChip(d) + docActions(d) + '<div class="cell-actions">' + delBtn('documentos', d.id, 'el documento ' + d.codigo) + '</div></td><td><div class="files">' + l[0] + (l[1] ? l[1] : '') + '</div></td></tr>';
+      return '<tr><td class="mono muted">' + esc(d.punto) + '</td><td class="code" translate="no">' + esc(d.codigo) + '</td><td class="asunto">' + esc(d.asunto) + '</td><td>' + relChip(d.relevancia, true) + '</td><td class="mono">' + (d.recibido ? esc(d.idioma || '—') : '—') + '</td><td>' + docChip(d) + docActions(d) + '</td><td><div class="files">' + l[0] + (l[1] ? l[1] : '') + '</div></td></tr>';
     }).join('') + '</tbody></table></div>' + more;
 }
 function docsView(list) {
@@ -544,11 +558,11 @@ function vEventos() {
     body = ns.length ? '<section class="panel"><div class="body">' + ns.map(novHTML).join('') + '</div></section>' : empty('Todavía no hay novedades de este evento.');
   } else {
     var rs = DB.recursos.filter(function (r) { return r.evento_id === e.id; });
-    body = rs.length ? '<section class="panel rows">' + rs.map(function (r) { var u = safeUrl(r.url); return '<div class="res-row"><h3>' + esc(r.titulo) + '</h3><p class="note">Link a Drive. Quien no tiene permiso en Drive no puede abrirlo.</p><div class="chips">' + (u ? '<a class="btn sm" href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + ic('file', true) + 'Abrir en Drive</a>' : '<span class="muted">Sin link</span>') + delBtn('recursos', r.id, 'el recurso “' + r.titulo + '”') + '</div></div>'; }).join('') + '</section>' : empty('Todavía no hay recursos cargados para este evento.');
+    body = rs.length ? '<section class="panel rows">' + rs.map(function (r) { var u = safeUrl(r.url); return '<div class="res-row"><h3>' + esc(r.titulo) + '</h3><p class="note">Link a Drive. Quien no tiene permiso en Drive no puede abrirlo.</p><div class="chips">' + (u ? '<a class="btn sm" href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + ic('file', true) + 'Abrir en Drive</a>' : '<span class="muted">Sin link</span>') + moreMenu(r.titulo, [delItem('recursos', r.id, 'el recurso “' + r.titulo + '”')]) + '</div></div>'; }).join('') + '</section>' : empty('Todavía no hay recursos cargados para este evento.');
   }
   return '<div class="head"><div><h1>Eventos</h1><p>Cada evento reúne sus documentos, tareas, novedades y recursos.</p></div></div>' +
     '<div class="ev-layout"><div class="ev-pick"><label for="evsel">Evento</label><select id="evsel">' + DB.eventos.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === S.ev ? ' selected' : '') + '>' + esc(x.n) + ' · ' + range(x) + '</option>'; }).join('') + '</select></div><div class="ev-list" role="group" aria-label="Eventos">' + DB.eventos.map(function (x) { return '<a href="#eventos/' + esc(encodeURIComponent(x.id)) + '/resumen" data-evlink="' + esc(x.id) + '"' + (x.id === S.ev ? ' aria-current="true"' : '') + '><b>' + esc(x.n) + '</b><span class="mono">' + range(x) + '</span></a>'; }).join('') + '</div>' +
-    '<div class="stack"><div class="evhead"><h2>' + esc(e.n) + '</h2><div class="meta"><span>' + esc(e.lugar) + '</span><span class="mono">' + range(e) + '</span>' + st('neutral', 'minus', esc(e.st)) + delBtn('eventos', e.id, 'el evento “' + e.n + '” junto con sus ' + list.length + ' documentos y sus recursos', 'Borrar evento y ' + list.length + ' documentos') + '</div></div>' + tb + '<div id="tabpanel" role="tabpanel" aria-labelledby="tab-' + S.tab + '" class="stack">' + body + '</div></div></div>';
+    '<div class="stack"><div class="evhead"><div class="evtop"><h2>' + esc(e.n) + '</h2>' + moreMenu(e.n, [delItem('eventos', e.id, 'el evento “' + e.n + '” junto con sus ' + list.length + ' documentos y sus recursos', 'Borrar evento y ' + list.length + ' documentos')]) + '</div><div class="meta"><span>' + esc(e.lugar) + '</span><span class="mono">' + range(e) + '</span>' + st('neutral', 'minus', esc(e.st)) + '</div></div>' + tb + '<div id="tabpanel" role="tabpanel" aria-labelledby="tab-' + S.tab + '" class="stack">' + body + '</div></div></div>';
 }
 /* Resumen de una fila de auditoría: qué fila y qué columnas cambiaron. */
 var OPS = { INSERT: 'Alta', UPDATE: 'Cambio', DELETE: 'Borrado' };
@@ -675,7 +689,7 @@ function fojaHTML(f, seen) {
     (f.reemplaza_a != null ? ' · reemplaza a ' + fnum(f.reemplaza_a) : '') + (anulada ? ' · anulada' + (f.motivo_anulacion ? ': ' + esc(f.motivo_anulacion) : '') + ' · el número se conserva' : '');
   var actions = reservada ? '<button class="btn sm edit" type="button" data-completar="' + esc(f.id) + '" data-num="' + esc(f.numero) + '">Completar link</button>'
     : (u ? '<a class="btn sm" href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">Abrir en Drive<span class="sr-only"> ' + fnum(f.numero) + '</span></a>' : '<span class="note">Sin link</span>') +
-      (!anulada ? '<button class="btn sm danger adm" type="button" data-anular="' + esc(f.id) + '" data-num="' + esc(f.numero) + '">Anular</button>' : '');
+      (!anulada ? moreMenu('foja ' + fnum(f.numero), [{ txt: 'Anular…', need: 'adm', danger: true, attrs: 'data-anular="' + esc(f.id) + '" data-num="' + esc(f.numero) + '"' }]) : '');
   return '<li class="tl-item' + (anulada ? ' anulada' : '') + '"><span class="tl-mark" translate="no"><span class="fpill">' + fnum(f.numero) + '</span></span><div class="tl-card"><div class="tl-head"><b>' + esc(f.descripcion) + '</b>' +
     (nueva ? st('warn', 'alert', 'Nueva') : '') + (anulada ? st('danger', 'minus', 'Anulada') : '') + (reservada ? st('warn', 'clock', 'Reservada · falta el link') : '') +
     '</div><p class="tl-meta">' + meta + '</p><div class="tl-actions">' + actions + '</div></div></li>';
@@ -858,6 +872,7 @@ function clearDrafts(ids) { ids.forEach(function (id) { delete DRAFTS[id]; var e
 function hasDraftText() { saveDrafts($('#app')); return Object.keys(DRAFTS).some(function (k) { return typeof DRAFTS[k] === 'string' && DRAFTS[k].trim() !== ''; }); }
 window.addEventListener('beforeunload', function (e) { if (S.session && hasDraftText()) { e.preventDefault(); e.returnValue = ''; } });
 function paint(html) {
+  menuClose(false);
   var app = $('#app'), sel = focusSel(document.activeElement);
   saveDrafts(app);
   app.innerHTML = html;
@@ -1237,4 +1252,47 @@ document.addEventListener('keydown', function (e) {
   /* en pestañas, mover el foco también cambia de pestaña (activación automática) */
   if (items[n].getAttribute('role') === 'tab') items[n].click();
 });
+/* ---------- Menú «Más acciones» ---------- */
+var MENU = null;
+function menuClose(focusBtn) {
+  if (!MENU) return;
+  var m = MENU; MENU = null;
+  m.menu.hidden = true; m.btn.setAttribute('aria-expanded', 'false');
+  m.menu.style.removeProperty('left'); m.menu.style.removeProperty('top');
+  if (focusBtn && m.btn.isConnected) m.btn.focus({ preventScroll: true });
+}
+function menuOpen(btn, which) {
+  menuClose(false);
+  var menu = btn.parentElement.querySelector('.menu'); if (!menu) return;
+  menu.hidden = false; btn.setAttribute('aria-expanded', 'true'); MENU = { btn: btn, menu: menu, t: Date.now() };
+  /* position: fixed, así no lo corta ninguna caja con overflow (tabla de documentos); se acomoda dentro de la ventana */
+  var r = btn.getBoundingClientRect(), w = menu.offsetWidth, h = menu.offsetHeight, vw = document.documentElement.clientWidth, vh = window.innerHeight;
+  var left = Math.min(Math.max(8, r.right - w), vw - w - 8), top = r.bottom + 4;
+  if (top + h > vh - 8) top = r.top - h - 4;
+  if (top < 8) top = Math.max(8, vh - h - 8);
+  menu.style.setProperty('left', Math.round(left) + 'px'); menu.style.setProperty('top', Math.round(top) + 'px');
+  var items = menu.querySelectorAll('[role="menuitem"]');
+  items[which === 'last' ? items.length - 1 : 0].focus({ preventScroll: true });
+}
+document.addEventListener('click', function (e) {
+  var b = e.target.closest('.menu-btn');
+  if (b) { if (MENU && MENU.btn === b) menuClose(true); else menuOpen(b, 'first'); return; }
+  if (e.target.closest('.menu [role="menuitem"]')) { menuClose(true); return; }   /* sigue la acción del ítem; el foco ya quedó en el botón */
+  if (MENU) menuClose(false);
+}, true);
+document.addEventListener('keydown', function (e) {
+  if (e.altKey || e.ctrlKey || e.metaKey) return;
+  var b = e.target.closest && e.target.closest('.menu-btn');
+  if (b && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) { e.preventDefault(); menuOpen(b, e.key === 'ArrowUp' ? 'last' : 'first'); return; }
+  if (!MENU || !e.target.closest || !e.target.closest('.menu')) return;
+  var items = [].slice.call(MENU.menu.querySelectorAll('[role="menuitem"]')), i = items.indexOf(e.target);
+  if (e.key === 'Escape') { e.preventDefault(); menuClose(true); return; }
+  if (e.key === 'Tab') { MENU.btn.focus({ preventScroll: true }); menuClose(false); return; }   /* no atrapa el foco: sigue desde el botón */
+  var n = e.key === 'ArrowDown' ? (i + 1) % items.length : e.key === 'ArrowUp' ? (i - 1 + items.length) % items.length : e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1 : -1;
+  if (n < 0) return;
+  e.preventDefault(); items[n].focus({ preventScroll: true });
+});
+/* un desplazamiento cierra el menú, salvo el que llega de inmediato por abrirlo (por ejemplo, al traer el botón a la vista) */
+window.addEventListener('scroll', function () { if (MENU && Date.now() - MENU.t > 250) menuClose(false); }, true);
+window.addEventListener('resize', function () { if (MENU) menuClose(false); });
 })();
