@@ -31,6 +31,42 @@ function range(e) { return e.desde === e.hasta ? fm(e.desde) : fm(e.desde) + ' a
 function monday(off) { return addD(T0, -((T0.getDay() + 6) % 7) + 7 * off); }
 function safeUrl(u) { return /^https:\/\//i.test(u || '') ? u : null; }
 function toast(m) { var t = $('#toast'); t.textContent = m; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(function () { t.hidden = true; }, 3200); }
+/* Confirmación propia (reemplaza confirm() y prompt()). Devuelve una promesa: null si se cancela, {motivo} si se acepta.
+   El foco entra en "Cancelar", queda atrapado (showModal), Escape o tocar afuera cancelan y el foco vuelve a quien abrió. */
+function confirmar(o) {
+  return new Promise(function (resolve) {
+    var dlg = document.createElement('dialog');
+    if (typeof dlg.showModal !== 'function') {   /* navegador viejo: se usa el aviso nativo */
+      if (o.motivo) { var m0 = prompt(o.titulo + '\n\n' + o.motivo); resolve(m0 && m0.trim() ? { motivo: m0.trim().slice(0, 300) } : null); return; }
+      resolve(confirm(o.titulo + '\n\n' + o.detalle) ? { motivo: '' } : null); return;
+    }
+    var opener = document.activeElement;
+    dlg.className = 'dlg'; dlg.setAttribute('aria-labelledby', 'dlg-t'); dlg.setAttribute('aria-describedby', 'dlg-d');
+    dlg.innerHTML = '<div class="dlg-body"><h2 id="dlg-t">' + esc(o.titulo) + '</h2><p id="dlg-d">' + esc(o.detalle) + '</p>' +
+      (o.motivo ? '<div class="dlg-field"><label for="dlg-m">' + esc(o.motivo) + '</label><textarea id="dlg-m" maxlength="300" rows="3"></textarea><p class="dlg-err" id="dlg-e" hidden>Escribí el motivo para continuar.</p></div>' : '') +
+      '<div class="dlg-actions"><button type="button" class="btn" data-dlg="no">Cancelar</button><button type="button" class="btn ' + (o.peligro ? 'danger-fill' : 'primary') + '" data-dlg="si">' + esc(o.textoAccion) + '</button></div></div>';
+    document.body.appendChild(dlg);
+    function fin(v) {
+      dlg.close(); dlg.remove();
+      /* en el siguiente ciclo: si quien abrió estaba bloqueado por lock(), ya se volvió a habilitar */
+      setTimeout(function () { if (opener && opener.isConnected && opener.focus && !opener.disabled) opener.focus({ preventScroll: true }); }, 0);
+      resolve(v);
+    }
+    dlg.addEventListener('cancel', function (e) { e.preventDefault(); fin(null); });
+    dlg.addEventListener('click', function (e) {
+      if (e.target === dlg) { fin(null); return; }
+      var b = e.target.closest('[data-dlg]'); if (!b) return;
+      if (b.dataset.dlg === 'no') { fin(null); return; }
+      var ta = dlg.querySelector('#dlg-m');
+      if (ta && !ta.value.trim()) { ta.setAttribute('aria-invalid', 'true'); ta.setAttribute('aria-describedby', 'dlg-e'); dlg.querySelector('#dlg-e').hidden = false; ta.focus(); return; }
+      fin({ motivo: ta ? ta.value.trim().slice(0, 300) : '' });
+    });
+    var mo = dlg.querySelector('#dlg-m');
+    if (mo) mo.addEventListener('input', function () { mo.removeAttribute('aria-invalid'); mo.removeAttribute('aria-describedby'); dlg.querySelector('#dlg-e').hidden = true; });
+    dlg.showModal();
+    dlg.querySelector('[data-dlg="no"]').focus();
+  });
+}
 function fdt(s) { return FECHA_HORA_AR.format(new Date(s)).replace(',', ''); }
 
 var cfg = window.PORTAL_CONFIG || {};
@@ -242,7 +278,8 @@ function countdown(e) {
 }
 /* Borrar: tareas y novedades, edición y admin; el resto, solo admin (lo mismo que exigen las reglas de la base). */
 var DEL_CLS = { tareas: 'edit', novedades: 'edit', documentos: 'adm', recursos: 'adm', eventos: 'adm' };
-function delBtn(tabla, id, que) { return '<button type="button" class="btn sm danger ' + DEL_CLS[tabla] + '" data-del="' + tabla + '" data-id="' + esc(id) + '" data-que="' + esc(que) + '">Borrar</button>'; }
+var DEL_ACC = { tareas: 'Borrar tarea', novedades: 'Borrar novedad', documentos: 'Borrar documento', recursos: 'Borrar recurso', eventos: 'Borrar evento' };
+function delBtn(tabla, id, que, accion) { return '<button type="button" class="btn sm danger ' + DEL_CLS[tabla] + '" data-del="' + tabla + '" data-id="' + esc(id) + '" data-que="' + esc(que) + '" data-acc="' + esc(accion || DEL_ACC[tabla]) + '">Borrar</button>'; }
 var NEXT = { 'Pendiente': ['Empezar', 'En Proceso'], 'En Proceso': ['Completar', 'Completadas'], 'Completadas': ['Reabrir', 'Pendiente'] };
 function taskHTML(t) {
   var p = ['alta', 'media', 'baja'].indexOf(t.prioridad) > -1 ? t.prioridad : 'media';
@@ -511,7 +548,7 @@ function vEventos() {
   }
   return '<div class="head"><div><h1>Eventos</h1><p>Cada evento reúne sus documentos, tareas, novedades y recursos.</p></div></div>' +
     '<div class="ev-layout"><div class="ev-pick"><label for="evsel">Evento</label><select id="evsel">' + DB.eventos.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === S.ev ? ' selected' : '') + '>' + esc(x.n) + ' · ' + range(x) + '</option>'; }).join('') + '</select></div><div class="ev-list" role="group" aria-label="Eventos">' + DB.eventos.map(function (x) { return '<a href="#eventos/' + esc(encodeURIComponent(x.id)) + '/resumen" data-evlink="' + esc(x.id) + '"' + (x.id === S.ev ? ' aria-current="true"' : '') + '><b>' + esc(x.n) + '</b><span class="mono">' + range(x) + '</span></a>'; }).join('') + '</div>' +
-    '<div class="stack"><div class="evhead"><h2>' + esc(e.n) + '</h2><div class="meta"><span>' + esc(e.lugar) + '</span><span class="mono">' + range(e) + '</span>' + st('neutral', 'minus', esc(e.st)) + delBtn('eventos', e.id, 'el evento “' + e.n + '” junto con sus ' + list.length + ' documentos y sus recursos') + '</div></div>' + tb + '<div id="tabpanel" role="tabpanel" aria-labelledby="tab-' + S.tab + '" class="stack">' + body + '</div></div></div>';
+    '<div class="stack"><div class="evhead"><h2>' + esc(e.n) + '</h2><div class="meta"><span>' + esc(e.lugar) + '</span><span class="mono">' + range(e) + '</span>' + st('neutral', 'minus', esc(e.st)) + delBtn('eventos', e.id, 'el evento “' + e.n + '” junto con sus ' + list.length + ' documentos y sus recursos', 'Borrar evento y ' + list.length + ' documentos') + '</div></div>' + tb + '<div id="tabpanel" role="tabpanel" aria-labelledby="tab-' + S.tab + '" class="stack">' + body + '</div></div></div>';
 }
 /* Resumen de una fila de auditoría: qué fila y qué columnas cambiaron. */
 var OPS = { INSERT: 'Alta', UPDATE: 'Cambio', DELETE: 'Borrado' };
@@ -917,7 +954,8 @@ document.addEventListener('click', async function (e) {
     return;
   }
   if (d.del) {
-    if (!DEL_CLS[d.del] || !confirm('¿Borrar ' + d.que + '?\n\nNo se puede deshacer desde el portal (queda copia en el registro de cambios).')) return;
+    if (!DEL_CLS[d.del]) return;
+    if (!await confirmar({ titulo: '¿Borrar ' + d.que + '?', detalle: 'No se puede deshacer desde el portal; queda una copia en el registro de cambios, que solo ve la administración.', textoAccion: d.acc || 'Borrar', peligro: true })) return;
     await lock(b, async function () {
       // Con .select() se sabe si la base borró algo: si las reglas no lo permiten, no da error, borra cero filas.
       var r = await sb.from(d.del).delete().eq('id', d.id).select('id');
@@ -926,6 +964,7 @@ document.addEventListener('click', async function (e) {
       if (d.del === 'eventos') S.ev = null;
       toast('Borrado');
       var y4 = window.scrollY; await reload(); window.scrollTo(0, y4);
+      var h1 = $('#app h1'); if (h1) { h1.setAttribute('tabindex', '-1'); h1.focus({ preventScroll: true }); }
     });
     return;
   }
@@ -933,9 +972,9 @@ document.addEventListener('click', async function (e) {
   if (d.expfilter) { S.expFilter = d.expfilter; keepScroll(render); return; }
   if (d.completar) { S.reserva[S.exp] = { id: d.completar, numero: +d.num, descripcion: (((S.fojas[S.exp] || {}).list || []).filter(function (f) { return f.id === d.completar; })[0] || {}).descripcion || '' }; S.expMode = 'doc'; render(); var xu = $('#xu'); if (xu) xu.focus(); return; }
   if (d.anular) {
-    var motivo = prompt('Anular la foja ' + fnum(+d.num) + '. La foja no se borra y su número se conserva.\n\nMotivo (obligatorio):');
-    if (motivo == null) return;
-    if (!motivo.trim()) { toast('Para anular hace falta el motivo.'); return; }
+    var ran = await confirmar({ titulo: '¿Anular la foja ' + fnum(+d.num) + '?', detalle: 'La foja no se borra y su número se conserva.', motivo: 'Motivo (obligatorio)', textoAccion: 'Anular foja ' + fnum(+d.num), peligro: true });
+    if (!ran) return;
+    var motivo = ran.motivo;
     await lock(b, async function () {
       var ra = await sb.rpc('anular_foja', { p_id: d.anular, p_motivo: motivo.trim().slice(0, 300) });
       if (ra.error) { saveFail(ra, 'anular'); return; }
@@ -996,7 +1035,7 @@ async function act(a) {
   }
   if (a === 'exp-cancelar') {
     var rs = S.reserva[S.exp]; if (!rs) return;
-    if (!confirm('¿Cancelar la reserva de ' + fnum(rs.numero) + '?\n\nEl número no se reutiliza: queda registrado como anulado para que la numeración siga continua.')) return;
+    if (!await confirmar({ titulo: '¿Cancelar la reserva de ' + fnum(rs.numero) + '?', detalle: 'El número no se reutiliza: queda registrado como anulado para que la numeración siga continua.', textoAccion: 'Cancelar reserva de ' + fnum(rs.numero), peligro: true })) return;
     var rx = await sb.rpc('cancelar_reserva_foja', { p_id: rs.id });
     if (rx.error) { saveFail(rx, 'cancelar la reserva'); return; }
     delete S.reserva[S.exp]; toast('Reserva cancelada'); await loadFojas(S.exp); return;
@@ -1034,7 +1073,8 @@ async function act(a) {
     S.enroll = null; render(); return;
   }
   if (a === 'mfa-off') {
-    if (!S.factors.length || !confirm('¿Cambiar de celular?\n\nSe borra el código actual y, antes de seguir usando el portal, vas a configurar el celular nuevo.')) return;
+    if (!S.factors.length) return;
+    if (!await confirmar({ titulo: '¿Cambiar de celular?', detalle: 'Se borra el código actual y, antes de seguir usando el portal, vas a configurar el celular nuevo.', textoAccion: 'Cambiar de celular', peligro: false })) return;
     var un = await sb.auth.mfa.unenroll({ factorId: S.factors[0].id });
     if (un.error) { toast('No se pudo quitar. Salí, volvé a ingresar con el código y probá de nuevo.'); report('mfa unenroll: ' + un.error.message, true); return; }
     await sb.auth.refreshSession();

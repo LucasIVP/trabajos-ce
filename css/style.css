@@ -410,3 +410,21 @@ a.mono.adlink{color:var(--primary)}
 @media (min-width:768px){.kv3{grid-template-columns:repeat(3,minmax(0,1fr))}}
 .kv3>div{border-bottom:0;border-right:1px solid var(--line)}
 .kv3>div:last-child{border-right:0}
+
+/* ---------- Diálogo de confirmación ---------- */
+.btn.danger-fill{background:var(--danger);border-color:var(--danger);color:#FFFFFF}
+:root[data-theme="dark"] .btn.danger-fill{color:var(--bg)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .btn.danger-fill{color:var(--bg)}}
+.dlg{border:1px solid var(--line);border-radius:var(--r-box);background:var(--surface);color:var(--ink);padding:0;width:min(440px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto}
+.dlg::backdrop{background:rgba(15,27,45,.55)}
+.dlg-body{padding:20px;display:grid;gap:12px}
+.dlg h2{font-size:18px;margin:0;overflow-wrap:anywhere}
+.dlg p{margin:0;color:var(--ink-2)}
+.dlg-field{display:grid;gap:6px}
+.dlg-field label{font-size:13px;font-weight:600;color:var(--ink-2)}
+.dlg-field textarea{width:100%;min-height:84px;resize:vertical;background:var(--surface);border:1px solid var(--control);border-radius:var(--r-ctl);padding:9px 12px;color:var(--ink)}
+.dlg-field textarea[aria-invalid="true"]{border-color:var(--danger);border-width:2px}
+.dlg .dlg-err{color:var(--danger);font-size:13px;font-weight:600}
+.dlg-actions{display:flex;flex-direction:column-reverse;gap:8px}
+.dlg-actions .btn{width:100%;min-height:var(--tap);justify-content:center}
+@media (min-width:600px){.dlg-actions{flex-direction:row;justify-content:flex-end}.dlg-actions .btn{width:auto}}
