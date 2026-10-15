@@ -43,7 +43,7 @@ if (configured) {
 /* Datos cargados desde la base */
 function emptyDB() { return { reservas: [], eventos: [], exp: {}, expList: [], docs: {}, tareas: [], novs: [], recursos: [], members: [], audit: [], errs: [] }; }
 var DB = emptyDB();
-var S = { exp: null, expMode: 'msg', expFilter: 'todo', expQuery: '', reserva: {}, fojas: {}, fojasOK: null, me: null, session: null, noRole: false, setpw: false, loading: true, err: '', dataErr: '', connErr: false, aal: 'aal1', needCode: false, needEnroll: false, factors: [], enroll: null, fresh: false, view: 'inicio', ev: null, tab: 'resumen', f: { est: 'todos', rel: 'todos', g: 'todos' }, tf: 'todas', wk: 0, cal: null };
+var S = { exp: null, expMode: 'msg', expFilter: 'todo', expQuery: '', reserva: {}, fojas: {}, fojasOK: null, me: null, session: null, noRole: false, setpw: false, loading: true, err: '', dataErr: '', connErr: false, aal: 'aal1', needCode: false, needEnroll: false, factors: [], enroll: null, fresh: false, view: 'inicio', ev: null, tab: 'resumen', dq: '', dn: 25, fopen: false, f: { est: 'todos', rel: 'todos', g: 'todos' }, tf: 'todas', wk: 0, cal: null };
 
 /* Un enlace de invitación o de recuperación trae su tipo en la dirección */
 if (/type=(invite|recovery)/.test(location.hash)) S.setpw = true;
@@ -439,36 +439,58 @@ function docLinks(d) {
   var b = d.sintesis ? (link(d.url_sintesis, 'Abrir Síntesis') || '<span class="muted">Sin link</span>') : !lleva ? '<span class="muted">No lleva</span>' : (d.recibido ? '<span class="muted">Síntesis: falta</span>' : '');
   return [a, b];
 }
-function docsView(list) {
-  var f = S.f;
-  var rows = list.filter(function (d) {
+var PAGE_DOCS = 25;
+var EST_OPTS = [['todos', 'Todos'], ['ok', 'Con Síntesis'], ['sin', 'Sin Síntesis'], ['na', 'No lleva Síntesis'], ['falta', 'No disponible']];
+function docsFiltered(list) {
+  var f = S.f, q = S.dq.trim().toLowerCase();
+  return list.filter(function (d) {
     if (f.est !== 'todos' && docStat(d) !== f.est) return false;
     if (f.rel !== 'todos' && d.relevancia !== f.rel) return false;
-    if (f.g !== 'todos' && d.grupo !== f.g) return false; return true;
+    if (f.g !== 'todos' && d.grupo !== f.g) return false;
+    if (q && ((d.codigo || '') + ' ' + (d.asunto || '')).toLowerCase().indexOf(q) < 0) return false;
+    return true;
   });
-  function ch(k, label, opts) { return '<div class="chips" role="group" aria-label="' + label + '"><span class="gl">' + label + '</span>' + opts.map(function (o) { return '<button class="chip" type="button" data-f="' + k + '" data-fv="' + o[0] + '" aria-pressed="' + (f[k] === o[0]) + '">' + o[1] + '</button>'; }).join('') + '</div>'; }
-  var filters = '<div class="filters">' + ch('est', 'Estado', [['todos', 'Todos'], ['ok', 'Con Síntesis'], ['sin', 'Sin Síntesis'], ['na', 'No lleva Síntesis'], ['falta', 'No disponible']]) + ch('rel', 'Relevancia', [['todos', 'Todas'], ['alta', 'Alta'], ['media', 'Media'], ['baja', 'Baja']]) + ch('g', 'Grupo', [['todos', 'Todos'], ['P', 'Plenario'], ['S', 'Subcomités'], ['I', 'Informativos']]) + '</div>' +
-    '<p class="note" role="status">Mostrando ' + rows.length + ' de ' + list.length + ' documentos</p>';
-  if (!rows.length) return filters + empty('Ningún documento coincide con los filtros.');
+}
+/* Lista de documentos (tabla o tarjetas), contador y "Ver los próximos 25". Se redibuja sola al escribir en el buscador. */
+function docsListHTML(list) {
+  var rows = docsFiltered(list), shown = rows.slice(0, S.dn);
+  var count = '<p class="note" role="status">Mostrando ' + shown.length + ' de ' + rows.length + (rows.length === 1 ? ' documento' : ' documentos') + (rows.length !== list.length ? ' (hay ' + list.length + ' en el evento)' : '') + '</p>';
+  if (!rows.length) return count + empty('Ningún documento coincide con los filtros.');
+  var more = rows.length > shown.length ? '<div class="more"><button class="btn" type="button" data-more="1">Ver los próximos ' + Math.min(PAGE_DOCS, rows.length - shown.length) + '</button></div>' : '';
   if (!isDesk()) {
-    return filters + '<div class="panel rows">' + rows.map(function (d) {
+    return count + '<div class="panel rows">' + shown.map(function (d) {
       var l = docLinks(d);
       return '<article class="dcard"><div class="top"><span class="code" translate="no">' + esc(d.codigo) + '</span><span class="note mono">' + esc(d.punto) + '</span></div><p>' + esc(d.asunto) + '</p>' +
         '<div class="chips">' + docChip(d) + relChip(d.relevancia) + (d.recibido && d.idioma ? '<span class="note mono">' + esc(d.idioma) + '</span>' : '') + '</div>' +
         '<div class="links">' + l[0] + (l[1] ? ' ' + l[1] : '') + '</div>' + docActions(d) + '<div>' + delBtn('documentos', d.id, 'el documento ' + d.codigo) + '</div></article>';
-    }).join('') + '</div>';
+    }).join('') + '</div>' + more;
   }
-  return filters + '<div class="panel tbox"><table class="t-wide"><thead><tr><th scope="col">Punto</th><th scope="col">Documento</th><th scope="col">Asunto</th><th scope="col">Relevancia</th><th scope="col">Idioma</th><th scope="col">Estado</th><th scope="col">Archivos</th></tr></thead><tbody>' +
-    rows.map(function (d) {
+  return count + '<div class="panel tbox"><table class="t-wide"><thead><tr><th scope="col">Punto</th><th scope="col">Documento</th><th scope="col">Asunto</th><th scope="col">Relevancia</th><th scope="col">Idioma</th><th scope="col">Estado</th><th scope="col">Archivos</th></tr></thead><tbody>' +
+    shown.map(function (d) {
       var l = docLinks(d);
-      return '<tr><td class="mono muted">' + esc(d.punto) + '</td><td class="code" translate="no">' + esc(d.codigo) + '<div class="cell-actions">' + delBtn('documentos', d.id, 'el documento ' + d.codigo) + '</div></td><td class="asunto">' + esc(d.asunto) + '</td><td>' + relChip(d.relevancia, true) + '</td><td class="mono">' + (d.recibido ? esc(d.idioma || '—') : '—') + '</td><td>' + docChip(d) + docActions(d) + '</td><td><div class="files">' + l[0] + (l[1] ? l[1] : '') + '</div></td></tr>';
-    }).join('') + '</tbody></table></div>';
+      /* Borrar va al final de la celda de Estado, después de las acciones de estado (la tanda 4 lo pasa al menú). */
+      return '<tr><td class="mono muted">' + esc(d.punto) + '</td><td class="code" translate="no">' + esc(d.codigo) + '</td><td class="asunto">' + esc(d.asunto) + '</td><td>' + relChip(d.relevancia, true) + '</td><td class="mono">' + (d.recibido ? esc(d.idioma || '—') : '—') + '</td><td>' + docChip(d) + docActions(d) + '<div class="cell-actions">' + delBtn('documentos', d.id, 'el documento ' + d.codigo) + '</div></td><td><div class="files">' + l[0] + (l[1] ? l[1] : '') + '</div></td></tr>';
+    }).join('') + '</tbody></table></div>' + more;
+}
+function docsView(list) {
+  var f = S.f, cnt = { todos: list.length };
+  list.forEach(function (d) { var k = docStat(d); cnt[k] = (cnt[k] || 0) + 1; });
+  /* Un solo grupo de botones con flechas (patrón ARIA): una sola parada de Tab para todo el grupo. */
+  function grp(k, label, opts, withCount) {
+    var cur = f[k]; if (!opts.some(function (o) { return o[0] === cur; })) cur = opts[0][0];
+    return '<div class="chips" role="group" aria-label="' + label + '" data-arrows="1"><span class="gl" aria-hidden="true">' + label + '</span>' + opts.map(function (o) { return '<button class="chip" type="button" data-f="' + k + '" data-fv="' + o[0] + '" tabindex="' + (o[0] === cur ? '0' : '-1') + '" aria-pressed="' + (f[k] === o[0]) + '">' + o[1] + (withCount ? ' <span class="mono">' + (cnt[o[0]] || 0) + '</span>' : '') + '</button>'; }).join('') + '</div>';
+  }
+  var extraOn = f.rel !== 'todos' || f.g !== 'todos', open = S.fopen || extraOn;
+  var more = '<button class="btn" type="button" data-fopen="1" aria-expanded="' + open + '" aria-controls="fextra">Relevancia y grupo' + (extraOn ? ' <span class="mono">(activo)</span>' : '') + '</button>';
+  var extra = open ? '<div class="filters" id="fextra">' + grp('rel', 'Relevancia', [['todos', 'Todas'], ['alta', 'Alta'], ['media', 'Media'], ['baja', 'Baja']]) + grp('g', 'Grupo', [['todos', 'Todos'], ['P', 'Plenario'], ['S', 'Subcomités'], ['I', 'Informativos']]) + '</div>' : '';
+  var search = '<div class="searchbox"><label for="dq">Buscar por código o asunto</label><input id="dq" type="search" value="' + esc(S.dq) + '" autocomplete="off" maxlength="80"></div>';
+  return '<div class="filters">' + grp('est', 'Estado', EST_OPTS, true) + '</div><div class="filters tools">' + search + more + '</div>' + extra + '<div id="dlist" class="stack">' + docsListHTML(list) + '</div>';
 }
 function vEventos() {
   if (!DB.eventos.length) return '<div class="head"><div><h1>Eventos</h1></div></div>' + empty('Todavía no hay eventos cargados. Quien administra los carga desde el panel de la base.');
   var e = evById(S.ev), list = DB.docs[e.id] || [], c = docCounts(list);
   var tabs = [['resumen', 'Resumen'], ['docs', 'Documentos'], ['tareas', 'Tareas'], ['novs', 'Novedades'], ['recursos', 'Recursos']];
-  var tb = '<div class="tabs" role="tablist" aria-label="Secciones del evento">' + tabs.map(function (t) { return '<button type="button" role="tab" id="tab-' + t[0] + '" aria-controls="tabpanel" data-tab="' + t[0] + '" aria-selected="' + (S.tab === t[0]) + '">' + t[1] + '</button>'; }).join('') + '</div>';
+  var tb = '<div class="tabs" role="tablist" aria-label="Secciones del evento">' + tabs.map(function (t) { return '<button type="button" role="tab" id="tab-' + t[0] + '" aria-controls="tabpanel" data-tab="' + t[0] + '" tabindex="' + (S.tab === t[0] ? '0' : '-1') + '" aria-selected="' + (S.tab === t[0]) + '">' + t[1] + '</button>'; }).join('') + '</div>';
   var body = '';
   if (S.tab === 'resumen') {
     var abiertas = DB.tareas.filter(function (t) { return t.ad === e.ad && t.estado !== 'Completadas'; }).length;
@@ -488,7 +510,7 @@ function vEventos() {
     body = rs.length ? '<section class="panel rows">' + rs.map(function (r) { var u = safeUrl(r.url); return '<div class="res-row"><h3>' + esc(r.titulo) + '</h3><p class="note">Link a Drive. Quien no tiene permiso en Drive no puede abrirlo.</p><div class="chips">' + (u ? '<a class="btn sm" href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + ic('file', true) + 'Abrir en Drive</a>' : '<span class="muted">Sin link</span>') + delBtn('recursos', r.id, 'el recurso “' + r.titulo + '”') + '</div></div>'; }).join('') + '</section>' : empty('Todavía no hay recursos cargados para este evento.');
   }
   return '<div class="head"><div><h1>Eventos</h1><p>Cada evento reúne sus documentos, tareas, novedades y recursos.</p></div></div>' +
-    '<div class="ev-layout"><div class="ev-list" role="group" aria-label="Eventos">' + DB.eventos.map(function (x) { return '<a href="#eventos/' + esc(encodeURIComponent(x.id)) + '/resumen" data-evlink="' + esc(x.id) + '"' + (x.id === S.ev ? ' aria-current="true"' : '') + '><b>' + esc(x.n) + '</b><span class="mono">' + range(x) + '</span></a>'; }).join('') + '</div>' +
+    '<div class="ev-layout"><div class="ev-pick"><label for="evsel">Evento</label><select id="evsel">' + DB.eventos.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === S.ev ? ' selected' : '') + '>' + esc(x.n) + ' · ' + range(x) + '</option>'; }).join('') + '</select></div><div class="ev-list" role="group" aria-label="Eventos">' + DB.eventos.map(function (x) { return '<a href="#eventos/' + esc(encodeURIComponent(x.id)) + '/resumen" data-evlink="' + esc(x.id) + '"' + (x.id === S.ev ? ' aria-current="true"' : '') + '><b>' + esc(x.n) + '</b><span class="mono">' + range(x) + '</span></a>'; }).join('') + '</div>' +
     '<div class="stack"><div class="evhead"><h2>' + esc(e.n) + '</h2><div class="meta"><span>' + esc(e.lugar) + '</span><span class="mono">' + range(e) + '</span>' + st('neutral', 'minus', esc(e.st)) + delBtn('eventos', e.id, 'el evento “' + e.n + '” junto con sus ' + list.length + ' documentos y sus recursos') + '</div></div>' + tb + '<div id="tabpanel" role="tabpanel" aria-labelledby="tab-' + S.tab + '" class="stack">' + body + '</div></div></div>';
 }
 /* Resumen de una fila de auditoría: qué fila y qué columnas cambiaron. */
@@ -824,6 +846,8 @@ function render() {
 function keepScroll(fn) { var y = window.scrollY; fn(); window.scrollTo(0, y); }
 /* La dirección refleja dónde se está: #semana, #eventos/<id>/<pestaña>. Así una sección o un evento se puede
    abrir en otra pestaña (Ctrl+clic, clic medio), compartir o volver con Atrás. */
+/* Búsqueda y "ver más" de documentos vuelven a su estado inicial al cambiar de evento o de pestaña. */
+function resetDocs() { S.dq = ''; S.dn = 25; S.fopen = false; }
 var TAB_IDS = ['resumen', 'docs', 'tareas', 'novs', 'recursos'];
 function hashFor() { return S.view === 'eventos' && S.ev ? 'eventos/' + encodeURIComponent(S.ev) + '/' + S.tab : S.view === 'expedientes' && S.exp ? 'expedientes/' + encodeURIComponent(S.exp) : S.view; }
 function applyHash() {
@@ -847,7 +871,7 @@ function go(v) {
 }
 window.addEventListener('hashchange', function () {
   if (!S.me) return;
-  var prev = S.view + S.ev + S.tab + S.exp; applyHash();
+  var prev = S.view + S.ev + S.tab + S.exp; applyHash(); if (prev !== S.view + S.ev + S.tab + S.exp) resetDocs();
   if (S.view === 'eventos' && !evById(S.ev)) S.ev = DB.eventos.length ? DB.eventos[0].id : null;
   if (prev !== S.view + S.ev + S.tab + S.exp) { if (S.view !== 'eventos') S.f = { est: 'todos', rel: 'todos', g: 'todos' }; render(); window.scrollTo(0, 0); }
 });
@@ -873,10 +897,12 @@ document.addEventListener('click', function (e) {
 document.addEventListener('click', async function (e) {
   var b = e.target.closest('button'); if (!b) return;
   var d = b.dataset;
-  if (d.ev) { S.ev = d.ev; S.tab = d.go || 'resumen'; S.f = { est: d.fest || 'todos', rel: 'todos', g: 'todos' }; go('eventos'); return; }
+  if (d.ev) { resetDocs(); S.ev = d.ev; S.tab = d.go || 'resumen'; S.f = { est: d.fest || 'todos', rel: 'todos', g: 'todos' }; go('eventos'); return; }
   if (d.v) { go(d.v); return; }
-  if (d.tab) { S.tab = d.tab; history.replaceState(null, '', '#' + hashFor()); render(); return; }
-  if (d.f) { S.f[d.f] = d.fv; keepScroll(render); return; }
+  if (d.tab) { S.tab = d.tab; resetDocs(); history.replaceState(null, '', '#' + hashFor()); render(); return; }
+  if (d.f) { S.f[d.f] = d.fv; S.dn = PAGE_DOCS; keepScroll(render); return; }
+  if (d.fopen) { S.fopen = !S.fopen; keepScroll(render); return; }
+  if (d.more) { S.dn += PAGE_DOCS; var dl = $('#dlist'), ev0 = evById(S.ev); if (dl && ev0) { var y4 = window.scrollY; dl.innerHTML = docsListHTML(DB.docs[ev0.id] || []); window.scrollTo(0, y4); var nx = dl.querySelector('.dcard:nth-child(' + (S.dn - PAGE_DOCS + 1) + '), tbody tr:nth-child(' + (S.dn - PAGE_DOCS + 1) + ')'); var fl = nx && nx.querySelector('a,button'); if (fl) fl.focus({ preventScroll: true }); } return; }
   if (d.tf) { S.tf = d.tf; render(); return; }
   if (d.wk != null) { S.wk = d.wk === '0' ? 0 : S.wk + (+d.wk); render(); return; }
   if (d.tk) {
@@ -1121,6 +1147,7 @@ document.addEventListener('input', function (e) {
   var t = e.target;
   clearFieldErr(t);
   if (t.id === 'np') { var l = $('#pwreq'); if (l) l.innerHTML = pwReqHTML(t.value); return; }
+  if (t.id === 'dq') { S.dq = t.value; S.dn = PAGE_DOCS; var dl2 = $('#dlist'), ev1 = evById(S.ev); if (dl2 && ev1) dl2.innerHTML = docsListHTML(DB.docs[ev1.id] || []); return; }
   if (t.id === 'exq') { S.expQuery = t.value; var xl = $('#exlist'); if (xl) xl.innerHTML = expListRows(); return; }
   if (!S.cal) return;
   if (t.dataset.cf) { S.cal[t.dataset.cf] = t.dataset.cf === 'dur' ? +t.value : t.value; var p = document.getElementById('calprev'); if (p) p.innerHTML = calPrev(); }
@@ -1128,6 +1155,7 @@ document.addEventListener('input', function (e) {
 });
 document.addEventListener('change', async function (e) {
   var t = e.target;
+  if (t.id === 'evsel') { resetDocs(); S.ev = t.value; S.tab = 'resumen'; go('eventos'); return; }
   if (t.dataset && t.dataset.rol && isAdmin()) {
     t.disabled = true;
     /* si la base lo rechaza, se redibuja para que el selector vuelva al rol real */
@@ -1155,4 +1183,18 @@ if (configured) {
   });
   applyHash();
 } else { S.loading = false; render(); }
+
+/* Flechas en pestañas y en grupos de filtros (patrón ARIA): izquierda/derecha mueven, Inicio/Fin van a los extremos,
+   Tab sale del grupo. Solo el elemento activo tiene tabindex 0. */
+document.addEventListener('keydown', function (e) {
+  if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].indexOf(e.key) < 0 || e.altKey || e.ctrlKey || e.metaKey) return;
+  var cur = e.target.closest && e.target.closest('[role="tab"], [data-arrows] .chip'); if (!cur) return;
+  var box = cur.closest('[role="tablist"], [data-arrows]'), items = [].slice.call(box.querySelectorAll('[role="tab"], .chip')), i = items.indexOf(cur);
+  var n = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1 : (i + (e.key === 'ArrowRight' ? 1 : -1) + items.length) % items.length;
+  e.preventDefault();
+  items.forEach(function (x, k) { x.tabIndex = k === n ? 0 : -1; });
+  items[n].focus();
+  /* en pestañas, mover el foco también cambia de pestaña (activación automática) */
+  if (items[n].getAttribute('role') === 'tab') items[n].click();
+});
 })();
