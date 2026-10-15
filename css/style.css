@@ -446,3 +446,15 @@ a.mono.adlink{color:var(--primary)}
 @media (max-width:767px){.fold-bar{display:block}.fold-closed{display:none}}
 .form input[type=search]{background:var(--surface);border:1px solid var(--control);border-radius:var(--r-ctl);padding:9px 12px;color:var(--ink);width:100%;font-weight:400}
 @media (max-width:1023px){.form input[type=search]{min-height:var(--tap)}}
+
+/* ---------- Tanda 7: acciones de vacíos, mostrar clave, botón fijo del Expediente ---------- */
+.state-act{margin-top:12px}
+.pwtoggle{min-height:var(--tap)}
+.fab,.fab-space{display:none}
+@media (max-width:1179px){
+  .fab{display:inline-flex;position:fixed;left:16px;right:16px;bottom:calc(var(--bar-h) + 12px + env(safe-area-inset-bottom,0px));z-index:20;min-height:var(--tap);justify-content:center}
+  .fab-space{display:block;height:72px}
+}
+@media (min-width:1024px) and (max-width:1179px){.fab{left:calc(var(--side-w) + 16px);bottom:16px}}
+@media (max-width:1023px){.crumb a{display:inline-flex;align-items:center;min-height:var(--tap);min-width:var(--tap)}}
+@media (max-width:1023px){.grp h3 a.adlink{display:inline-flex;align-items:center;min-height:var(--tap)}}

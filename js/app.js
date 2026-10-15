@@ -190,7 +190,7 @@ async function boot(session) {
   if (!r.data || !r.data.rol) { S.noRole = true; S.loading = false; render(); return; }
   S.me = r.data;
   await loadFactors();
-  try { await loadAll(); } catch (e) { S.dataErr = 'No se pudieron cargar los datos.'; report('carga: ' + (e.code || '') + ' ' + (e.message || ''), true); }
+  try { await loadAll(); } catch (e) { S.dataErr = 'No se pudieron cargar los datos. Revisá tu conexión. Si sigue, avisale a quien administra el portal.'; report('carga: ' + (e.code || '') + ' ' + (e.message || ''), true); }
   S.loading = false; render();
 }
 async function rebootNow() { var s = await sb.auth.getSession(); await boot(s.data.session); }
@@ -309,12 +309,19 @@ function novHTML(n) {
 }
 function expOptions() { return DB.expList.map(function (x) { return '<option value="' + esc(x.ad) + '" translate="no">#' + esc(x.ad) + ' ' + esc(x.nombre) + '</option>'; }).join(''); }
 /* Estados de vista con el mismo estilo en todas las pantallas */
-function empty(msg) { return '<div class="panel state">' + msg + '</div>'; }
+function empty(msg, accion) { return '<div class="panel state">' + msg + (accion && canDo('edit') ? '<div class="state-act">' + accion + '</div>' : '') + '</div>'; }
+/* Acciones de los vacíos: solo se dibujan si el rol puede hacerlas (lectura ve solo el texto). */
+var ACT_NOV = '<button class="btn primary" type="button" data-xgo="novedades">Cargar novedad</button>';
+var ACT_TAREA = '<button class="btn primary" type="button" data-xgo="semana">Agregar tarea</button>';
 function emptyIn(msg) { return '<div class="state">' + msg + '</div>'; }
 function errorBox(msg) { return '<div class="panel state state-error" role="alert"><p>' + esc(msg) + '</p><button class="btn primary" type="button" data-act="retry">Reintentar</button></div>'; }
 function memberName(id) { var m = DB.members.filter(function (x) { return x.id === id; })[0]; return m ? (m.nombre || m.email) : (id ? 'cuenta borrada' : 'sistema'); }
 /* Escritorio o celular: la tabla de documentos y la navegación cambian según el ancho. */
 /* Con barra lateral (≥ 1024 px) el contenido es más angosto: la tabla entra desde 1180 px; entre 900 y 1023 px no hay barra lateral. */
+/* Dos columnas del Expediente (desde 1180 px): el Resumen va junto al formulario; en pantallas angostas va antes de la línea de tiempo. */
+var MQ_X = window.matchMedia('(min-width: 1180px)');
+function isX() { return MQ_X.matches; }
+MQ_X.addEventListener('change', function () { if (S.me && S.view === 'expedientes') render(); });
 var MQ_DESK = window.matchMedia('(min-width: 900px) and (max-width: 1023px), (min-width: 1180px)');
 function isDesk() { return MQ_DESK.matches; }
 MQ_DESK.addEventListener('change', function () { if (S.me) render(); });
@@ -478,7 +485,7 @@ function novListHTML() {
   var list = novFiltered(), g = {}, order = [];
   list.forEach(function (n) { if (!g[n.ad]) { g[n.ad] = []; order.push(n.ad); } g[n.ad].push(n); });
   var count = '<p class="note" role="status">Mostrando ' + list.length + ' de ' + DB.novs.length + (DB.novs.length === 1 ? ' novedad' : ' novedades') + '</p>';
-  if (!DB.novs.length) return empty('Todavía no hay novedades.');
+  if (!DB.novs.length) return empty('Todavía no hay novedades.', ACT_NOV);
   if (!list.length) return count + empty('Ninguna novedad coincide con los filtros.');
   return count + order.map(function (ad) { return '<section class="grp"><h3>' + adLink(ad) + ' <small>' + esc(DB.exp[ad] || '') + '</small></h3>' + g[ad].map(novHTML).join('') + '</section>'; }).join('');
 }
@@ -580,10 +587,10 @@ function vEventos() {
     body = list.length ? docsView(list) : empty('Todavía no hay documentos para este evento.<br>Se cargan a medida que llegan, con su link a Drive.');
   } else if (S.tab === 'tareas') {
     var ts = DB.tareas.filter(function (t) { return t.ad === e.ad; });
-    body = ts.length ? '<section class="panel"><div class="body">' + ts.map(taskHTML).join('') + '</div></section>' : empty('No hay tareas para este evento.');
+    body = ts.length ? '<section class="panel"><div class="body">' + ts.map(taskHTML).join('') + '</div></section>' : empty('No hay tareas para este evento.', ACT_TAREA);
   } else if (S.tab === 'novs') {
     var ns = DB.novs.filter(function (n) { return n.ad === e.ad; });
-    body = ns.length ? '<section class="panel"><div class="body">' + ns.map(novHTML).join('') + '</div></section>' : empty('Todavía no hay novedades de este evento.');
+    body = ns.length ? '<section class="panel"><div class="body">' + ns.map(novHTML).join('') + '</div></section>' : empty('Todavía no hay novedades de este evento.', ACT_NOV);
   } else {
     var rs = DB.recursos.filter(function (r) { return r.evento_id === e.id; });
     body = rs.length ? '<section class="panel rows">' + rs.map(function (r) { var u = safeUrl(r.url); return '<div class="res-row"><h3>' + esc(r.titulo) + '</h3><p class="note">Link a Drive. Quien no tiene permiso en Drive no puede abrirlo.</p><div class="chips">' + (u ? '<a class="btn sm" href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + ic('file', true) + 'Abrir en Drive</a>' : '<span class="muted">Sin link</span>') + moreMenu(r.titulo, [delItem('recursos', r.id, 'el recurso “' + r.titulo + '”')]) + '</div></div>'; }).join('') + '</section>' : empty('Todavía no hay recursos cargados para este evento.');
@@ -648,11 +655,11 @@ function vCuenta() {
     '<div><button class="btn" type="button" data-act="mfa-off">Cambiar de celular</button></div><p class="note">Se borra el código actual y, antes de seguir, configurás el celular nuevo.</p>';
   var tema = '<div class="chips" role="group" aria-label="Apariencia">' + [['', 'Automático'], ['light', 'Claro'], ['dark', 'Oscuro']].map(function (o) { return '<button class="chip" type="button" data-theme-set="' + o[0] + '" data-theme-opt="1" aria-pressed="' + (pref === o[0]) + '">' + o[1] + '</button>'; }).join('') + '</div><p class="note">Automático sigue la configuración del dispositivo. Se recuerda solo en este navegador.</p>';
   return '<div class="head"><div><h1>Mi cuenta</h1><p>Tus datos y la seguridad de tu ingreso.</p></div></div>' +
-    (isAdmin() ? '<section class="panel adm"><div class="body evlist-row"><div><h2>Miembros</h2><p class="note">Roles, invitaciones y registros del portal.</p></div><a class="btn primary" href="#miembros" data-to="miembros">Abrir Miembros</a></div></section>' : '') +
     '<section class="panel" aria-labelledby="h-dat"><header><h2 id="h-dat">Datos</h2></header><div class="body"><dl class="kv"><dt>Nombre</dt><dd>' + esc(u.nombre || '—') + '</dd><dt>Correo</dt><dd class="mono">' + esc(u.email) + '</dd><dt>Rol</dt><dd>' + esc(ROLES[u.rol] || '—') + '</dd><dt>Iniciales</dt><dd class="mono">' + esc(u.iniciales || '—') + '</dd></dl></div></section>' +
     '<section class="panel" aria-labelledby="h-mfa"><header><h2 id="h-mfa">Segundo factor (código en el celular)</h2></header><div class="body stack">' + mfa + '</div></section>' +
     '<section class="panel" aria-labelledby="h-tema"><header><h2 id="h-tema">Apariencia</h2></header><div class="body stack">' + tema + '</div></section>' +
-    '<section class="panel" aria-labelledby="h-ses"><header><h2 id="h-ses">Sesión</h2></header><div class="body stack"><p>La sesión se cierra sola después de 30 minutos sin uso. Tocá <b>Salir</b> al terminar, sobre todo en una computadora compartida.</p><div><button class="btn" type="button" data-act="logout">Salir</button></div></div></section>';
+    '<section class="panel" aria-labelledby="h-ses"><header><h2 id="h-ses">Sesión</h2></header><div class="body stack"><p>La sesión se cierra sola después de 30 minutos sin uso. Tocá <b>Salir</b> al terminar, sobre todo en una computadora compartida.</p><div><button class="btn" type="button" data-act="logout">Salir</button></div></div></section>' +
+    (isAdmin() ? '<section class="panel adm"><div class="body evlist-row"><div><h2>Miembros</h2><p class="note">Roles, invitaciones y registros del portal.</p></div><a class="btn primary" href="#miembros" data-to="miembros">Abrir Miembros</a></div></section>' : '');
 }
 /* ---------- Expedientes y línea de tiempo (novedades + fojas) ---------- */
 /* Las fojas se leen al abrir un expediente. Si la tabla todavía no existe en la base (Parte B sin aplicar),
@@ -751,7 +758,7 @@ function expForm(ad, fo) {
       (off ? '<p class="warnbox">' + ic('alert', true) + '<span>Todavía no se puede cargar fojas: falta aplicar en la base la propuesta de fojas. Mientras tanto, usá «Solo mensaje».</span></p>' : '') +
       '<div><button class="btn primary" type="button" data-act="exp-reservar"' + (off ? ' disabled' : '') + '>Reservar número de foja</button></div>';
   }
-  return '<section class="panel edit" aria-labelledby="h-xadd"><header><h2 id="h-xadd">Agregar a la línea de tiempo</h2></header><div class="body form">' + modes + body + '</div></section>';
+  return '<section class="panel edit" id="xform" aria-labelledby="h-xadd"><header><h2 id="h-xadd">Agregar a la línea de tiempo</h2></header><div class="body form">' + modes + body + '</div></section>';
 }
 function vExpediente(ad) {
   var x = DB.expList.filter(function (e) { return e.ad === ad; })[0];
@@ -779,8 +786,10 @@ function vExpediente(ad) {
   return '<nav class="crumb" aria-label="Ruta"><a href="#expedientes" data-to="expedientes">Expedientes</a> <span aria-hidden="true">/</span> <span class="mono" translate="no">' + esc(ad) + '</span></nav>' +
     '<div class="xhead"><div class="chips"><span class="adtag" translate="no">AD ' + esc(ad) + '</span>' + st('neutral', 'minus', 'Estado: ' + (x.estado ? esc(x.estado) : 'Sin dato')) + st('neutral', 'minus', 'Tipo: ' + (x.tipo ? esc(x.tipo) : 'Sin dato')) + '</div>' +
     '<h1>' + esc(x.nombre) + '</h1><div class="xmeta"><span>EE GDE <span class="mono" translate="no">' + (x.ee_gde ? esc(x.ee_gde) : 'Sin dato') + '</span></span><span class="xrev">Próxima revisión ' + revHTML + '</span></div></div>' +
+    (isX() ? '' : resumen) +
     '<div class="xgrid"><section class="stack" aria-labelledby="h-xtl"><div class="head"><h2 id="h-xtl">Línea de tiempo</h2><div class="chips" role="group" aria-label="Filtrar la línea de tiempo">' + fbtn('todo', 'Todo', all.length) + fbtn('nov', 'Novedades', nN) + fbtn('doc', 'Documentos', nF) + '</div></div>' + tl + '</section>' +
-    '<div class="stack">' + expForm(ad, fo) + resumen + '</div></div>';
+    '<div class="stack">' + expForm(ad, fo) + (isX() ? resumen : '') + '</div></div>' +
+    '<div class="fab-space edit" aria-hidden="true"></div><button class="btn primary fab edit" type="button" data-xadd="1">Agregar a la línea de tiempo</button>';
 }
 var V = { expedientes: vExpedientes, inicio: vInicio, semana: vSemana, novedades: vNov, eventos: vEventos, miembros: vMiembros, cuenta: vCuenta };
 var TITLES = { expedientes: 'Expedientes', inicio: 'Inicio', semana: 'Semana', novedades: 'Novedades', eventos: 'Eventos', miembros: 'Miembros', cuenta: 'Mi cuenta' };
@@ -788,11 +797,13 @@ var TITLES = { expedientes: 'Expedientes', inicio: 'Inicio', semana: 'Semana', n
 function vSetup() {
   return '<main class="wrap"><div class="panel auth"><h2>Falta configurar el portal</h2><p>Abrí <span class="mono">js/config.js</span> y pegá la clave pública del proyecto de Supabase (Project Settings, API Keys, clave publishable).</p></div></main>';
 }
+/* «Mostrar clave»: muestra u oculta los campos de clave de la pantalla. Nunca se guarda en borradores. */
+function pwToggle(ids) { return '<div><button class="btn pwtoggle" type="button" data-pwshow="' + ids + '" aria-pressed="false" aria-controls="' + ids + '">Mostrar clave</button></div>'; }
 function vLogin() {
   return authWrap('<form class="panel auth form" id="lf"><h1 class="mark"><span class="logo" aria-hidden="true">CE</span>Portal CE</h1><p class="muted">Ingresá con la cuenta que te dio el equipo.</p>' +
     (S.err ? '<div class="err" role="alert">' + esc(S.err) + '</div>' : '') +
     '<label for="lm">Correo<input id="lm" type="email" name="email" placeholder="nombre@ejemplo.com" autocomplete="username" spellcheck="false" autocapitalize="off" required></label>' +
-    '<label for="lp">Clave<input id="lp" type="password" name="password" autocomplete="current-password" required></label>' +
+    '<label for="lp">Clave<input id="lp" type="password" name="password" autocomplete="current-password" data-pw="1" required></label>' + pwToggle('lp') +
     '<button class="btn primary" type="submit">Ingresar</button>' +
     '<button class="btn" type="button" data-act="forgot">Olvidé mi clave</button>' +
     '<p class="note">¿No tenés cuenta? Pedísela a quien administra el portal. No hay registro abierto.</p></form>');
@@ -827,9 +838,9 @@ function pwErr(msg) { var e = $('#pwerr'); if (e) { e.textContent = msg; e.hidde
 function vSetPw() {
   return authWrap('<form class="panel auth form" id="pwf" novalidate><h1 class="mark"><span class="logo" aria-hidden="true">CE</span>Portal CE</h1><p class="muted">Elegí tu clave para entrar al portal.</p>' +
     '<div class="err" id="pwerr" role="alert"' + (S.err ? '' : ' hidden') + '>' + esc(S.err) + '</div>' +
-    '<label for="np">Clave nueva<input id="np" type="password" minlength="12" autocomplete="new-password" aria-describedby="pwreq" required></label>' +
+    '<label for="np">Clave nueva<input id="np" type="password" minlength="12" autocomplete="new-password" aria-describedby="pwreq" data-pw="1" required></label>' + pwToggle('np np2') +
     '<div class="note">La clave tiene que tener:</div><ul class="pwreq" id="pwreq">' + pwReqHTML('') + '</ul>' +
-    '<label for="np2">Repetir la clave<input id="np2" type="password" minlength="12" autocomplete="new-password" required></label>' +
+    '<label for="np2">Repetir la clave<input id="np2" type="password" minlength="12" autocomplete="new-password" data-pw="1" required></label>' +
     '<button class="btn primary" type="submit">Guardar clave</button></form>');
 }
 function vMfaCode() {
@@ -889,7 +900,7 @@ function fieldValue(el) { return el.type === 'checkbox' ? el.checked : el.value;
 function setField(el, v) { if (el.type === 'checkbox') el.checked = v; else el.value = v; }
 function saveDrafts(root) {
   root.querySelectorAll('input[id], textarea[id], select[id]').forEach(function (el) {
-    if (el.type === 'password' || el.id === 'exq' || el.dataset.cf || el.dataset.ci || el.dataset.rol || el.disabled) return;
+    if (el.type === 'password' || el.dataset.pw || el.id === 'exq' || el.dataset.cf || el.dataset.ci || el.dataset.rol || el.disabled) return;
     if (fieldValue(el) !== fieldDefault(el)) DRAFTS[el.id] = fieldValue(el); else delete DRAFTS[el.id];
   });
 }
@@ -981,6 +992,22 @@ document.addEventListener('click', async function (e) {
   if (d.v) { go(d.v); return; }
   if (d.tab) { S.tab = d.tab; resetDocs(); history.replaceState(null, '', '#' + hashFor()); render(); return; }
   if (d.f) { S.f[d.f] = d.fv; S.dn = PAGE_DOCS; keepScroll(render); return; }
+  if (d.pwshow) {
+    var showing = b.getAttribute('aria-pressed') !== 'true';
+    d.pwshow.split(' ').forEach(function (id) { var f = document.getElementById(id); if (f) f.type = showing ? 'text' : 'password'; });
+    b.setAttribute('aria-pressed', String(showing)); return;
+  }
+  if (d.xgo) {
+    if (d.xgo === 'novedades') S.nform = true;
+    go(d.xgo);
+    var first = $(d.xgo === 'novedades' ? '#nt' : '#tn'); if (first) first.focus();
+    return;
+  }
+  if (d.xadd) {
+    var xf = $('#xform'), xc = xf && xf.querySelector('textarea, input, select, button');
+    if (xf) { xf.scrollIntoView({ block: 'start' }); if (xc) xc.focus({ preventScroll: true }); }
+    return;
+  }
   if (d.nform) {
     S.nform = !S.nform; keepScroll(render);
     if (S.nform) { var nt0 = $('#nt'); if (nt0) nt0.focus(); }
